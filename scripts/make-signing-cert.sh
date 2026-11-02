@@ -115,8 +115,10 @@ vibeslop/release-signing. A new one would make every user grant Accessibility ag
         # Everything the certificate needs is checked before it exists, so a failure here leaves
         # nothing half made.
         command -v gh >/dev/null || fail "The GitHub CLI stores the certificate: brew install gh"
-        repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner) ||
-            fail "gh cannot see this repository; sign in with gh auth login."
+        # Named, not read from the remote: origin is the Entire mirror, which gh doesn't know.
+        repo=${PLANETS_REPO:-vibeslop/Planets}
+        gh api "repos/$repo" >/dev/null 2>&1 ||
+            fail "gh cannot see $repo; sign in with gh auth login."
         gh api "repos/$repo/environments/$environment" >/dev/null 2>&1 ||
             fail "$repo has no '$environment' environment for the certificate to go to."
 
