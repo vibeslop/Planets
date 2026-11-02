@@ -10,7 +10,7 @@ import PlanetsCore
 ///
 ///   "c"  crashed: open Planets again, unless it died within 15 seconds of starting, which
 ///        would only crash again
-///   "r"  asked to start over, as after Accessibility comes back: open it again
+///   "r"  asked to start over, as after Accessibility comes back or an update: open it again
 ///   end of file with no byte: it quit, or was killed on purpose; nothing to do
 enum Lifecycle {
     /// Held for the life of the process; the lock goes with it, however it ends.
@@ -74,11 +74,12 @@ enum Lifecycle {
         }
     }
 
+    /// Whether a watcher is there to open Planets again.
+    static var canRelaunch: Bool { pipeEnd >= 0 }
+
     /// Opens Planets again from the watcher and exits without putting windows back: the new
     /// copy finds them parked and keeps them so, where putting them back would flash every
     /// hidden workspace on screen.
-    static var canRelaunch: Bool { pipeEnd >= 0 }
-
     static func relaunch() -> Never {
         tell("r")
         exit(0)

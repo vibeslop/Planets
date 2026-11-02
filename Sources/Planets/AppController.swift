@@ -12,6 +12,7 @@ final class AppController {
     let statusItem = StatusItemController()
     let glow = FocusGlowController()
     let hud = WorkspaceHUD()
+    let updater = Updater()
     private var input: InputTap!
     private var ipc: IPCServer?
     private var onboarding: OnboardingWindowController?
@@ -47,6 +48,10 @@ final class AppController {
         store.onChange = { [weak self] in self?.configChanged($0) }
         startIPC()
         installSignalHandlers()
+        updater.onReady = { [weak self] in self?.refreshStatusItem() }
+        updater.canRestart = { [weak self] in self.map { !$0.accessibilityLost } ?? false }
+        updater.restart = { [weak self] in self?.restartIntoUpdate() }
+        updater.setEnabled(config.autoUpdate)
         if AXIsProcessTrusted() {
             startCore()
         } else {
@@ -161,7 +166,15 @@ final class AppController {
             glow.configure(enabled: config.focusGlow, intensity: config.glowIntensity, gap: config.layout.innerGap, color: config.glowColor)
             updateFocusFollowsMouse()
         }
+        updater.setEnabled(config.autoUpdate)
         refreshStatusItem()
+    }
+
+    /// Saves where every window belongs first: the new copy reads it and leaves every window
+    /// as it was.
+    private func restartIntoUpdate() {
+        if coreStarted { wm.persist() }
+        Lifecycle.relaunch()
     }
 
     private func stateChanged(_ change: WindowManager.Change) {
@@ -426,6 +439,9 @@ final class AppController {
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
+        if let version = updater.ready {
+            menu.addItem(MenuTarget.item("Restart to Update to \(version)") { [weak self] in self?.restartIntoUpdate() })
+        }
         let quit = MenuTarget.item("Quit Planets") { NSApp.terminate(nil) }
         quit.keyEquivalent = "q"
         menu.addItem(quit)

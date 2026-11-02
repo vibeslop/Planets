@@ -10,7 +10,7 @@ Paste this into Terminal:
 curl -fsSL https://raw.githubusercontent.com/vibeslop/Planets/main/install.sh | sh
 ```
 
-The script installs Planets in `/Applications`, links the `planet` command into a folder on your `PATH`, and starts Planets in the menu bar. Run it again to update.
+The script installs Planets in `/Applications`, links the `planet` command into a folder on your `PATH`, and starts Planets in the menu bar. From then on Planets updates itself: it checks for a new release daily, installs it in the background, and restarts into it once you've left the keyboard for a minute, with every window where it was. `auto_update = false` in the config turns that off, and running the script again updates by hand.
 
 Planets is not notarized, so macOS blocks a copy downloaded in a browser. The script downloads it with curl, which macOS doesn't block.
 
