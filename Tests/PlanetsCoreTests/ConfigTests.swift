@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PlanetsCore
 
@@ -235,5 +236,47 @@ import Testing
         let (config, _) = try Config.parse("[tiling]\ngaps = -50")
         #expect(config.layout.innerGap == 0)
         #expect(config.layout.outerGap == 0)
+    }
+}
+
+@Suite struct ReleaseTests {
+    let json = Data("""
+        {"tag_name": "v0.2.0", "draft": false, "body": null,
+         "assets": [
+            {"name": "Planets-0.2.0-macos.zip", "size": 5,
+             "browser_download_url": "https://github.com/vibeslop/Planets/releases/download/v0.2.0/Planets-0.2.0-macos.zip"},
+            {"name": "notes.txt", "browser_download_url": "https://example.com/notes.txt"}
+         ]}
+        """.utf8)
+
+    @Test func versionsCompareNumberByNumber() {
+        #expect(Version("0.10.0")! > Version("0.9.0")!)
+        #expect(Version("v1.2")! == Version("1.2.0")!)
+        #expect(Version("1.2.3")!.description == "1.2.3")
+        for bad in ["", "v", "1.2.3.4", "1.2-beta", "1..2", "-1.0", "１.0"] { #expect(Version(bad) == nil) }
+    }
+
+    @Test func aNewerReleaseIsAnUpdate() throws {
+        let release = try JSONDecoder().decode(Release.self, from: json)
+        let update = release.update(after: Version("0.1.0")!)
+        #expect(update?.version == Version("0.2.0"))
+        #expect(update?.archive.lastPathComponent == "Planets-0.2.0-macos.zip")
+    }
+
+    @Test func theSameOrAnOlderReleaseIsNot() throws {
+        let release = try JSONDecoder().decode(Release.self, from: json)
+        #expect(release.update(after: Version("0.2.0")!) == nil)
+        #expect(release.update(after: Version("0.3.0")!) == nil)
+    }
+
+    /// The workflow creates the release before it attaches the archive.
+    @Test func aReleaseWithoutItsArchiveIsNot() throws {
+        let release = try JSONDecoder().decode(Release.self, from: Data(#"{"tag_name": "v9.0.0", "assets": []}"#.utf8))
+        #expect(release.update(after: Version("0.1.0")!) == nil)
+    }
+
+    @Test func autoUpdateIsOnUnlessTurnedOff() throws {
+        #expect(try Config.parse(Config.defaultFileContents).config.autoUpdate)
+        #expect(try !Config.parse("[general]\nauto_update = false").config.autoUpdate)
     }
 }

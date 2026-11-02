@@ -192,6 +192,8 @@ public struct Config: Equatable, Sendable {
     /// Option: Option-drag is column selection in code editors and terminals.
     public var mouseModifier: Modifiers = [.control, .option]
     public var focusFollowsMouse = false
+    /// Installs new releases by itself. Only a copy installed from a release can.
+    public var autoUpdate = true
 
     public init() {
         bindings = Config.defaultBindings(mod: mod)
@@ -296,7 +298,7 @@ extension Config {
         }
 
         if let general = root["general"]?.table {
-            check(general, "general", known: ["mod", "ignore", "only"])
+            check(general, "general", known: ["mod", "ignore", "only", "auto_update"])
             if let mod = general["mod"]?.string {
                 var modifiers: Modifiers = []
                 for word in mod.split(separator: "+") {
@@ -307,6 +309,7 @@ extension Config {
             }
             if let ignore = general["ignore"]?.strings { config.ignoredApps = ignore }
             if let only = general["only"]?.strings { config.onlyApps = only.isEmpty ? nil : only }
+            if let update = general["auto_update"]?.bool { config.autoUpdate = update }
         }
 
         if let tiling = root["tiling"]?.table {
@@ -419,6 +422,9 @@ extension Config {
         ignore = []
         # Manage only these apps. Handy for a first try; leave empty to manage everything.
         only = []
+        # Install new releases by itself, and restart into them once you leave the keyboard
+        # for a minute; the restart keeps every window where it is.
+        auto_update = true
 
         [tiling]
         # Every new window splits the focused one along its longer side (dwindle).
