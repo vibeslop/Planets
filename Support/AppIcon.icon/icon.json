@@ -1,0 +1,13 @@
+{
+  "fill-specializations" : [
+    { "value" : { "linear-gradient" : [ "display-p3:0.05490,0.07059,0.14118,1.00000", "display-p3:0.00784,0.01176,0.03137,1.00000" ] } },
+    { "appearance" : "dark", "value" : { "linear-gradient" : [ "display-p3:0.03137,0.03922,0.08627,1.00000", "display-p3:0.00000,0.00000,0.00784,1.00000" ] } }
+  ],
+  "groups" : [
+    { "name" : "Surface", "layers" : [ { "name" : "surface", "image-name" : "surface.png", "glass" : true } ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.6 }, "translucency" : { "enabled" : false, "value" : 0 }, "specular" : true },
+    { "name" : "Atmosphere", "layers" : [ { "name" : "atmosphere", "image-name" : "atmosphere.png", "glass" : false } ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0 }, "translucency" : { "enabled" : false, "value" : 0 }, "specular" : false }
+  ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}
