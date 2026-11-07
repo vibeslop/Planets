@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planets — a tiling window manager for macOS</title>
+<meta name="description" content="Planets lays out your Mac’s windows side by side and keeps nine workspaces one key away. Free and open source, for macOS 26 on Apple silicon.">
+<meta property="og:title" content="Planets — every window in its place">
+<meta property="og:description" content="A tiling window manager for macOS. Windows side by side, nine workspaces one key away.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://vibeslop.github.io/Planets/">
+<meta property="og:image" content="https://vibeslop.github.io/Planets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Planets tiling three windows side by side on a Mac, the focused one lit in gold.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://vibeslop.github.io/Planets/">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Planets",
+  "description": "A tiling window manager for macOS. It lays out your windows side by side and keeps nine workspaces one key away.",
+  "url": "https://vibeslop.github.io/Planets/",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "macOS 26 or later, Apple silicon",
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "image": "https://vibeslop.github.io/Planets/og.png",
+  "sameAs": "https://github.com/vibeslop/Planets"
+}
+</script>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#04050b">
+<link rel="icon" href="favicon.png" type="image/png">
+<link rel="preload" as="image" href="planet-1024.webp" imagesrcset="planet-1024.webp 1024w, planet-2048.webp 2048w" imagesizes="min(1535px, 141vw)">
+<style>
+  :root {
+    --bg: #04050b;
+    --text: #f5f3ef;
+    --muted: #a3a6b8;
+    --faint: #8b8fa6;
+    --line: rgb(255 255 255 / 0.08);
+    /* The planet's own colours, from the app icon. Blue also marks numbers in code. */
+    --teal: #4fe0c8;
+    --violet: #b58ad8;
+    --blue: #8a8cff;
+    /* The focused window's light, from Theme.swift. Gold means focus, and only focus: the
+       glow, the keyboard focus ring, a pressed key. The primary action is white. */
+    --gold: #ffcc33;
+    --gold-light: #ffeb9e;
+    --amber: #fa9424;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @supports (color: color(display-p3 1 1 1)) {
+    :root {
+      --gold: color(display-p3 1 0.8 0.2);
+      --gold-light: color(display-p3 1 0.92 0.62);
+      --amber: color(display-p3 0.98 0.58 0.14);
+      --teal: color(display-p3 0.36 0.88 0.78);
+    }
+  }
+  :root { --g-core: var(--gold); --g-light: var(--gold-light); --g-deep: var(--amber); }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; overflow-x: clip;
+    background: var(--bg); color: var(--text);
+    font: 1.0625rem/1.55 system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-underline-offset: 3px; }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  code, pre { font-family: var(--mono); font-size: 0.88em; }
+  kbd { font-family: inherit; white-space: nowrap; }
+  img { display: block; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  /* Stars: one large tile of scattered dots, inline so the sky costs no request. */
+  /* The sky: two soft nebulae, and stars that thin out behind the hero's text and fade
+     further down, so no star lands on a letter. */
+  .sky {
+    position: absolute; inset: 0 0 auto; height: 1500px; z-index: -2; pointer-events: none;
+    background:
+      radial-gradient(ellipse 50% 35% at 18% 12%, rgb(140 100 220 / 0.22), transparent 70%),
+      radial-gradient(ellipse 40% 30% at 88% 22%, rgb(60 200 180 / 0.12), transparent 70%);
+    mask-image: linear-gradient(#000 55%, transparent);
+  }
+  .sky::before {
+    content: ""; position: absolute; inset: 0;
+    background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='720' height='640'><circle cx='331' cy='154' r='0.8' fill='%23fff' opacity='0.77'/><circle cx='548' cy='96' r='0.7' fill='%23ffeedd' opacity='0.73'/><circle cx='219' cy='38' r='0.5' fill='%23fff' opacity='0.63'/><circle cx='246' cy='92' r='0.9' fill='%23ffeedd' opacity='0.63'/><circle cx='126' cy='228' r='1.1' fill='%23fff' opacity='0.76'/><circle cx='590' cy='599' r='0.8' fill='%23fff' opacity='0.38'/><circle cx='47' cy='570' r='1.3' fill='%23d8dcff' opacity='0.44'/><circle cx='147' cy='553' r='0.5' fill='%23ffeedd' opacity='0.72'/><circle cx='698' cy='185' r='0.5' fill='%23fff' opacity='0.73'/><circle cx='381' cy='99' r='0.9' fill='%23ffeedd' opacity='0.81'/><circle cx='61' cy='633' r='0.6' fill='%23ffeedd' opacity='0.67'/><circle cx='437' cy='321' r='0.8' fill='%23d8dcff' opacity='0.73'/><circle cx='370' cy='306' r='0.6' fill='%23fff' opacity='0.87'/><circle cx='83' cy='588' r='0.7' fill='%23fff' opacity='0.69'/><circle cx='459' cy='294' r='0.9' fill='%23fff' opacity='0.99'/><circle cx='524' cy='428' r='0.6' fill='%23fff' opacity='0.84'/><circle cx='500' cy='431' r='0.5' fill='%23fff' opacity='0.98'/><circle cx='571' cy='586' r='1.3' fill='%23fff' opacity='0.92'/><circle cx='348' cy='358' r='0.9' fill='%23d8dcff' opacity='0.67'/><circle cx='70' cy='95' r='0.7' fill='%23fff' opacity='0.66'/><circle cx='62' cy='317' r='1.1' fill='%23d8dcff' opacity='0.73'/><circle cx='291' cy='395' r='1.1' fill='%23d8dcff' opacity='0.58'/><circle cx='363' cy='172' r='0.9' fill='%23fff' opacity='0.43'/><circle cx='223' cy='294' r='0.6' fill='%23d8dcff' opacity='0.83'/><circle cx='400' cy='508' r='0.5' fill='%23d8dcff' opacity='0.46'/><circle cx='562' cy='284' r='0.6' fill='%23ffeedd' opacity='0.88'/><circle cx='285' cy='425' r='0.7' fill='%23d8dcff' opacity='0.79'/><circle cx='236' cy='154' r='0.5' fill='%23fff' opacity='0.46'/><circle cx='674' cy='238' r='0.5' fill='%23ffeedd' opacity='0.67'/><circle cx='186' cy='269' r='0.7' fill='%23d8dcff' opacity='0.35'/><circle cx='547' cy='378' r='0.9' fill='%23fff' opacity='0.72'/><circle cx='707' cy='527' r='0.9' fill='%23fff' opacity='0.78'/><circle cx='467' cy='572' r='0.8' fill='%23d8dcff' opacity='0.61'/><circle cx='106' cy='493' r='1.1' fill='%23fff' opacity='0.61'/><circle cx='68' cy='213' r='0.8' fill='%23fff' opacity='0.46'/><circle cx='615' cy='53' r='0.5' fill='%23fff' opacity='0.35'/><circle cx='549' cy='103' r='0.7' fill='%23fff' opacity='0.75'/><circle cx='212' cy='628' r='0.8' fill='%23fff' opacity='0.45'/><circle cx='355' cy='616' r='0.7' fill='%23fff' opacity='0.66'/><circle cx='499' cy='477' r='0.8' fill='%23fff' opacity='0.66'/><circle cx='147' cy='104' r='1.1' fill='%23fff' opacity='0.57'/><circle cx='490' cy='165' r='0.9' fill='%23ffeedd' opacity='0.37'/><circle cx='370' cy='150' r='1.1' fill='%23fff' opacity='0.7'/><circle cx='540' cy='305' r='1.1' fill='%23fff' opacity='0.91'/><circle cx='530' cy='375' r='0.6' fill='%23fff' opacity='0.58'/><circle cx='545' cy='554' r='1.3' fill='%23fff' opacity='0.68'/><circle cx='627' cy='199' r='1.3' fill='%23d8dcff' opacity='0.51'/><circle cx='232' cy='204' r='0.9' fill='%23fff' opacity='0.67'/><circle cx='28' cy='286' r='0.8' fill='%23ffeedd' opacity='0.52'/><circle cx='352' cy='457' r='1.3' fill='%23fff' opacity='0.96'/><circle cx='373' cy='82' r='0.6' fill='%23d8dcff' opacity='0.42'/><circle cx='201' cy='345' r='0.6' fill='%23ffeedd' opacity='0.66'/><circle cx='1' cy='490' r='1.1' fill='%23fff' opacity='0.57'/><circle cx='676' cy='122' r='0.8' fill='%23fff' opacity='0.86'/><circle cx='489' cy='182' r='0.8' fill='%23fff' opacity='0.86'/><circle cx='88' cy='405' r='0.8' fill='%23fff' opacity='0.61'/><circle cx='162' cy='174' r='0.6' fill='%23ffeedd' opacity='0.37'/><circle cx='476' cy='149' r='0.9' fill='%23d8dcff' opacity='0.89'/><circle cx='673' cy='358' r='0.6' fill='%23fff' opacity='0.71'/><circle cx='21' cy='14' r='1.3' fill='%23fff' opacity='0.98'/><circle cx='539' cy='142' r='0.8' fill='%23fff' opacity='0.99'/><circle cx='216' cy='28' r='0.7' fill='%23ffeedd' opacity='0.49'/><circle cx='246' cy='600' r='0.7' fill='%23d8dcff' opacity='0.52'/><circle cx='134' cy='62' r='1.1' fill='%23d8dcff' opacity='0.58'/><circle cx='678' cy='597' r='1.3' fill='%23d8dcff' opacity='0.94'/><circle cx='513' cy='133' r='0.9' fill='%23ffeedd' opacity='0.45'/><circle cx='19' cy='450' r='1.3' fill='%23fff' opacity='0.47'/><circle cx='153' cy='176' r='0.6' fill='%23fff' opacity='0.66'/><circle cx='569' cy='63' r='0.7' fill='%23ffeedd' opacity='0.79'/><circle cx='568' cy='494' r='1.3' fill='%23ffeedd' opacity='0.85'/></svg>") 0 0 / 720px 640px;
+    mask-image: radial-gradient(ellipse 560px 320px at calc(50% - 200px) 300px, transparent 70%, #000 100%), linear-gradient(#000 55%, transparent);
+    mask-composite: intersect; -webkit-mask-composite: source-in;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+  nav { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.125rem; text-decoration: none; }
+  nav .brand img { width: 34px; height: 34px; }
+  nav .out { text-decoration: none; padding: 8px 14px; margin-inline-end: -14px; border-radius: 999px; color: var(--muted); font-size: 0.9375rem; }
+
+  /* Everything sits on the page's left edge, and the headings stay quieter than the
+     product: 64px at most, as Linear and Raycast set theirs. */
+  .hero { padding: 72px 0 0; }
+  h1 {
+    font-size: clamp(2.5rem, 6vw, 4rem); line-height: 1.04; letter-spacing: -0.02em; font-weight: 600;
+    margin: 0 0 20px; max-width: 12ch; text-wrap: balance;
+  }
+  .lede { font-size: clamp(1.0625rem, 1.6vw, 1.25rem); line-height: 1.5; color: var(--muted); max-width: 32em; margin: 0 0 32px; text-wrap: pretty; }
+
+  .install {
+    display: flex; align-items: center; gap: 12px; max-width: 860px; margin: 0; text-align: start;
+    background: rgb(10 12 23 / 0.8); border-radius: 16px; padding: 6px 6px 6px 18px;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12), 0 10px 40px -10px rgb(120 110 255 / 0.35);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  }
+  .install code {
+    flex: 1; min-width: 0; padding: 12px 0; font-size: 0.875rem; line-height: 1.5;
+    white-space: nowrap; overflow-x: auto; scrollbar-width: none;
+  }
+  .install code::-webkit-scrollbar { display: none; }
+  .install code.cut { mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent); }
+  .install code::before { content: "$ "; color: var(--teal); }
+  .copy {
+    flex: none; font-size: 0.9375rem; font-weight: 600; padding: 10px 18px; min-width: 96px; border: 0; border-radius: 10px;
+    color: var(--bg); background: var(--text);
+    transition: transform 150ms ease-out, filter 150ms ease-out;
+  }
+  .copy:active { transform: scale(0.96); }
+  .meta { font-size: 0.875rem; color: var(--faint); margin: 16px 0 0; text-wrap: pretty; }
+  .meta a { color: var(--muted); }
+
+  /* The planet rises behind the demo; its rim of atmosphere is the icon's blue. */
+  /* The hero and the demo clip the planet between them, so its faded lower half never
+     lengthens the page or widens it. */
+  .top { overflow: clip; }
+  .stage { position: relative; margin-top: 88px; }
+  .planet {
+    position: absolute; z-index: -1; left: 50%; top: 0; width: min(1900px, 175vw); aspect-ratio: 1;
+    translate: -50% -15%; pointer-events: none;
+    mask-image: linear-gradient(#000 22%, transparent 52%);
+  }
+  .planet img { position: absolute; inset: 9.6%; width: 80.8%; height: 80.8%; }
+  .planet::before {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background: radial-gradient(circle closest-side, transparent 74%, rgb(138 140 255 / 0.55) 77.6%, rgb(138 140 255 / 0.14) 82%, transparent 92%);
+  }
+
+  /* The demo is drawn at a fixed 1280×800 and scaled to fit, so it looks the same on a phone. */
+  .screen {
+    position: relative; aspect-ratio: 1280 / 800;
+    border-radius: 16px; overflow: hidden; user-select: none; -webkit-user-select: none;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12), 0 50px 120px -30px #000, 0 0 90px -20px rgb(120 120 255 / 0.4);
+  }
+  .mac {
+    position: absolute; left: 0; top: 0; width: 1280px; height: 800px; transform-origin: 0 0; transform: scale(var(--s, 0.84));
+    background:
+      radial-gradient(ellipse 40% 50% at 15% 85%, rgb(181 138 216 / 0.35), transparent 70%),
+      radial-gradient(ellipse 45% 40% at 70% 10%, rgb(79 224 200 / 0.12), transparent 70%),
+      linear-gradient(160deg, #141b3c, #05060f 70%);
+  }
+  .mac .wall { position: absolute; width: 727px; right: -133px; bottom: -293px; opacity: 0.95; }
+  .menubar {
+    position: relative; z-index: 2; display: flex; align-items: center; gap: 22px; height: 28px; padding: 0 16px;
+    background: rgb(10 12 28 / 0.45); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    font-size: 13px; color: rgb(255 255 255 / 0.92);
+  }
+  .menubar .logo { width: 16px; height: 16px; }
+  .menubar b { font-weight: 700; }
+  .menubar .right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+  .strip { display: flex; gap: 3px; font-variant-numeric: tabular-nums; font-weight: 500; }
+  .strip span { min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; border-radius: 9px; text-align: center; }
+  .strip span.empty { opacity: 0.35; }
+  .strip span.current { background: rgb(255 255 255 / 0.92); color: #0b0d16; }
+  .desk { position: absolute; left: 0; top: 28px; width: 1280px; height: 772px; }
+  .hint { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; color: rgb(255 255 255 / 0.6); }
+  .hint kbd { background: rgb(255 255 255 / 0.12); padding: 2px 10px; border-radius: 6px; }
+
+  .win {
+    position: absolute; display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 12px; background: #1d1e26; color: #e8e8ee; font-size: 13px; line-height: 1.45;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1), 0 18px 40px -12px rgb(0 0 0 / 0.7);
+  }
+  .tb { flex: none; position: relative; display: flex; align-items: center; height: 30px; padding: 0 12px; background: rgb(255 255 255 / 0.04); border-bottom: 1px solid rgb(0 0 0 / 0.35); }
+  .tl { display: flex; gap: 8px; }
+  .tl i { width: 12px; height: 12px; border-radius: 50%; background: #3b3d48; }
+  .win.focused .tl i:nth-child(1) { background: #ff5f57; }
+  .win.focused .tl i:nth-child(2) { background: #febc2e; }
+  .win.focused .tl i:nth-child(3) { background: #28c840; }
+  .tt { position: absolute; left: 80px; right: 80px; text-align: center; font-weight: 600; font-size: 13px; color: rgb(255 255 255 / 0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .win.focused .tt { color: rgb(255 255 255 / 0.85); }
+  .content { flex: 1; min-height: 0; overflow: hidden; container-type: size; position: relative; }
+
+  /* The focused window's light: a thin rim and a haze densest at the top left, a window of
+     its own that glides to the next focused window in 120 ms, as FocusGlow does. */
+  .glow {
+    position: absolute; z-index: 3; pointer-events: none; border-radius: 13px;
+    box-shadow:
+      0 0 0 2px var(--g-light),
+      0 0 12px 2px color-mix(in srgb, var(--g-core) 75%, transparent),
+      -10px -10px 36px 0 color-mix(in srgb, var(--g-deep) 55%, transparent),
+      0 0 60px 6px color-mix(in srgb, var(--g-core) 22%, transparent);
+    transition: left 120ms, top 120ms, width 120ms, height 120ms, box-shadow 200ms;
+    transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .glow.instant { transition: none; }
+
+  /* Terminal */
+  .app-terminal { background: #0c0e15; }
+  .term { margin: 0; padding: 14px 16px; font: 13px/1.6 var(--mono); white-space: pre; color: #dfe2ee; }
+  .term .pr { color: var(--teal); font-weight: 700; }
+  .term .dim { color: #8a8fac; }
+  .term .ok { color: #8ae48a; }
+  .term .cur { display: inline-block; width: 8px; height: 15px; vertical-align: -3px; background: #dfe2ee; }
+
+  /* Safari */
+  .app-safari { background: #1b1c22; }
+  .bar-url { display: flex; align-items: center; gap: 14px; height: 40px; padding: 0 14px; background: #24252c; border-bottom: 1px solid #000; color: #8b8d99; }
+  .bar-url .url { flex: 1; max-width: 360px; margin: 0 auto; height: 26px; line-height: 26px; border-radius: 7px; background: #33343c; text-align: center; color: #d7d8de; font-size: 12px; overflow: hidden; }
+  .page { display: flex; gap: 24px; padding: 20px 26px; }
+  .page article { flex: 1; min-width: 0; }
+  .page h3 { font: 600 28px/1.1 Georgia, "New York", serif; margin: 0 0 4px; }
+  .page .sub { color: #8b8d99; font-size: 12px; border-bottom: 1px solid #33343c; padding-bottom: 8px; margin: 0 0 12px; }
+  .page p { margin: 0 0 10px; color: #c9cad3; font-size: 13px; }
+  .infobox { flex: none; width: 200px; background: #23242b; border-radius: 8px; padding: 14px; text-align: center; font-size: 12px; color: #9a9ca8; }
+  .saturn { position: relative; width: 120px; height: 120px; margin: 6px auto 12px; }
+  .saturn::before { content: ""; position: absolute; inset: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f8e6bd, #d1a565 55%, #6e4b28 100%); }
+  .saturn::after { content: ""; position: absolute; left: -14px; right: -14px; top: 46px; height: 28px; border-radius: 50%; border: 5px solid rgb(232 210 168 / 0.75); border-top-color: rgb(232 210 168 / 0.25); rotate: -14deg; }
+  @container (max-width: 520px) { .infobox { display: none; } }
+
+  /* Notes */
+  .app-notes { background: #1e1e21; }
+  .notes { display: flex; height: 100%; }
+  .notes .list { width: 34%; max-width: 220px; border-right: 1px solid #2c2c31; padding: 10px 8px; }
+  .notes .list div { padding: 8px 10px; border-radius: 7px; margin-bottom: 2px; }
+  .notes .list div b { display: block; font-size: 13px; }
+  .notes .list div span { font-size: 12px; color: #8c8c95; }
+  .notes .list div.on { background: #6b5a1c; }
+  .notes .list div.on span { color: #e4dcbc; }
+  .notes .note { flex: 1; padding: 16px 22px; }
+  .notes h4 { margin: 0 0 12px; font-size: 22px; }
+  .notes ul { list-style: none; margin: 0; padding: 0; }
+  .notes li { display: flex; gap: 10px; align-items: center; margin-bottom: 9px; font-size: 14px; }
+  .notes li::before { content: ""; width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px #77777f; flex: none; }
+  .notes li.done { color: #8c8c95; }
+  .notes li.done::before { background: #e8b923 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.5l2.2 2.2 4.8-5' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); box-shadow: none; }
+  @container (max-width: 440px) { .notes .list { display: none; } }
+
+  /* Xcode */
+  .app-xcode { background: #1f1f24; }
+  .tabs { display: flex; height: 32px; background: #19191d; border-bottom: 1px solid #000; font-size: 12px; }
+  .tabs span { padding: 0 16px; line-height: 32px; color: #8d8d96; border-right: 1px solid #000; }
+  .tabs span.on { background: #1f1f24; color: #e8e8ee; }
+  .code { margin: 0; padding: 12px 0; font: 13px/1.62 var(--mono); white-space: pre; color: #e8e8ee; counter-reset: l; }
+  .code div { counter-increment: l; }
+  .code div::before { content: counter(l); display: inline-block; width: 44px; padding-right: 14px; text-align: right; color: #55555f; }
+  .k { color: #fc5fa3; font-weight: 600; } .ty { color: #5dd8ff; } .cm { color: #7f8c98; } .fn { color: #67b7a4; }
+
+  /* Mail */
+  .app-mail { background: #1e1f24; }
+  .mail { padding: 6px 0; }
+  .mail .row { display: flex; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #2a2b31; }
+  .mail .row.on { background: #2a4f8a; border-radius: 8px; margin: 0 8px; padding: 10px 8px; }
+  .mail .av { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #0b0d16; }
+  .mail .tx { flex: 1; min-width: 0; }
+  .mail .top { display: flex; justify-content: space-between; gap: 8px; }
+  .mail .top span { color: #8d8f9b; font-size: 12px; }
+  .mail .s { font-size: 13px; }
+  .mail .p { font-size: 12px; color: #8d8f9b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Music */
+  .app-music { background: linear-gradient(160deg, #2a2148, #15141f 60%); }
+  .music { display: flex; gap: 22px; padding: 22px; height: 100%; }
+  .music .art { flex: none; width: 46%; max-width: 220px; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: radial-gradient(circle at 70% 20%, #3b2d72, #0b0b22); box-shadow: 0 18px 40px -10px #000; position: relative; }
+  .music .art img { position: absolute; width: 105%; left: 7.5%; top: 37.5%; }
+  .music .art span { position: absolute; left: 12px; top: 10px; font: italic 600 18px Georgia, serif; color: #f2e9ff; }
+  .music .info { flex: 1; min-width: 0; }
+  .music h4 { margin: 0; font-size: 20px; }
+  .music .by { color: #b9a9e8; margin: 0 0 14px; font-size: 14px; }
+  .music ol { margin: 0; padding: 0; list-style: none; counter-reset: t; }
+  .music li { counter-increment: t; display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgb(255 255 255 / 0.06); font-size: 13px; color: #cfc8e4; }
+  .music li::before { content: counter(t); width: 14px; color: #7d7499; }
+  .music li span { margin-left: auto; color: #7d7499; }
+  .music li.on { color: #fff; font-weight: 600; }
+  .music li.on::before { content: "♫"; color: var(--violet); }
+
+  /* Messages */
+  .app-messages { background: #1c1c1e; }
+  .msgs { display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; height: 100%; padding: 16px; font-size: 14px; }
+  .msgs .when { align-self: center; font-size: 11px; color: #8e8e93; margin-bottom: 4px; }
+  .msgs p { margin: 0; max-width: 72%; padding: 7px 13px; border-radius: 18px; background: #3a3a3c; align-self: flex-start; }
+  .msgs p.me { background: #0a84ff; align-self: flex-end; }
+
+  /* Finder */
+  .app-finder { background: #1e1e22; }
+  .finder { display: flex; height: 100%; }
+  .finder aside { width: 30%; max-width: 170px; padding: 12px; background: rgb(255 255 255 / 0.03); font-size: 13px; color: #c9c9d0; }
+  .finder aside b { display: block; font-size: 11px; color: #77777f; margin-bottom: 6px; }
+  .finder aside div { padding: 4px 6px; border-radius: 6px; }
+  .finder aside div.on { background: rgb(255 255 255 / 0.1); }
+  .finder .grid { flex: 1; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 18px 22px; padding: 18px; }
+  .finder .f { width: 74px; text-align: center; font-size: 12px; color: #d4d4da; }
+  .finder .f i { display: block; width: 64px; height: 48px; margin: 0 auto 6px; border-radius: 6px; background: linear-gradient(#78c3f9, #3c9bec); position: relative; }
+  .finder .f i::before { content: ""; position: absolute; left: 0; top: -6px; width: 26px; height: 10px; border-radius: 4px 4px 0 0; background: #5aaef3; }
+  .finder .f.doc i { width: 42px; height: 54px; background: #f2f2f5; border-radius: 3px; }
+  .finder .f.doc i::before { display: none; }
+  @container (max-width: 420px) { .finder aside { display: none; } }
+
+  .keys { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 0; }
+  .keys button {
+    display: flex; gap: 8px; align-items: baseline; padding: 8px 14px; font-size: 0.9375rem; border-radius: 10px;
+    background: linear-gradient(#2a2e44, #1c1f2e); border: 0;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18), 0 2px 0 #06070c;
+    transition: transform 100ms;
+  }
+  .keys button:active, .keys button.down { transform: translateY(2px); box-shadow: inset 0 0 0 1px var(--gold), 0 0 0 #06070c; }
+  .keys button span { color: var(--muted); font-size: 0.875rem; }
+  .keys .gap { width: 14px; }
+  .caption { color: var(--muted); font-size: 0.9375rem; margin: 14px 0 0; }
+  .caption .touch { display: none; }
+  @media (hover: none) and (pointer: coarse) { .caption .touch { display: inline; } .caption .pointer { display: none; } }
+
+  h2 { font-size: clamp(1.75rem, 3.4vw, 2.5rem); line-height: 1.1; letter-spacing: -0.015em; font-weight: 600; margin: 0 0 16px; text-wrap: balance; }
+
+  /* A section: the idea on the left, the real thing it's about on the right. */
+  .row { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 64px; align-items: center; padding: 144px 0 0; }
+  .say p { color: var(--muted); font-size: 1.0625rem; margin: 0; max-width: 30em; text-wrap: pretty; }
+  .say kbd, .say code { color: var(--text); }
+  .shot { margin: 0; }
+
+  /* The Planets menu, drawn from AppController's menu and its Keyboard Shortcuts submenu. */
+  .menus {
+    position: relative; height: 420px; border-radius: 16px; overflow: hidden;
+    background: radial-gradient(ellipse 60% 70% at 80% 100%, rgb(181 138 216 / 0.3), transparent 70%), linear-gradient(160deg, #141b3c, #05060f 75%);
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1);
+    font-size: 13px; line-height: 22px; color: rgb(255 255 255 / 0.92);
+  }
+  .menus .bar { display: flex; justify-content: flex-end; align-items: center; gap: 16px; height: 28px; padding: 0 16px; background: rgb(10 12 28 / 0.45); }
+  .menus .bar .strip span.current { background: rgb(255 255 255 / 0.92); color: #0b0d16; }
+  .menu {
+    position: absolute; top: 32px; width: 250px; padding: 5px; border-radius: 12px;
+    background: rgb(40 41 52 / 0.92); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12), 0 20px 50px -10px rgb(0 0 0 / 0.7);
+  }
+  .menu.main { right: 70px; }
+  .menu.sub { right: 326px; top: 150px; width: 262px; }
+  .menu div { display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; white-space: nowrap; }
+  .menu div.on { background: #0a5bd6; }
+  .menu div.h { font-size: 11px; font-weight: 600; color: rgb(255 255 255 / 0.55); padding-top: 2px; }
+  .menu hr { border: 0; border-top: 1px solid rgb(255 255 255 / 0.1); margin: 5px 10px; }
+  .menu .k { margin-inline-start: auto; color: rgb(255 255 255 / 0.5); }
+  .menu .on .k { color: rgb(255 255 255 / 0.85); }
+  .menu .ws { flex: none; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1.2px rgb(255 255 255 / 0.6); font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+  .menu .ws.c { background: rgb(255 255 255 / 0.92); color: #23242e; box-shadow: none; }
+  .menu .apps { overflow: hidden; text-overflow: ellipsis; }
+  .menu .tick { width: 12px; }
+
+  /* The config file, in an editor window lit as Planets lights the focused one. */
+  .pane {
+    border-radius: 12px; overflow: hidden; background: #16171e; color: #e8e8ee;
+    box-shadow:
+      0 0 0 2px var(--g-light), 0 0 12px 2px color-mix(in srgb, var(--g-core) 75%, transparent),
+      -10px -10px 36px 0 color-mix(in srgb, var(--g-deep) 45%, transparent), 0 30px 80px -20px #000;
+  }
+  .pane .tb { display: flex; align-items: center; height: 34px; padding: 0 14px; background: #1e1f27; border-bottom: 1px solid #000; font-size: 13px; }
+  .pane .tl i:nth-child(1) { background: #ff5f57; } .pane .tl i:nth-child(2) { background: #febc2e; } .pane .tl i:nth-child(3) { background: #28c840; }
+  .pane .tb span:last-child { flex: 1; text-align: center; margin-inline-end: 52px; color: rgb(255 255 255 / 0.75); font-weight: 600; }
+  .toml { margin: 0; padding: 18px 22px; font: 13.5px/1.7 var(--mono); white-space: pre; overflow-x: auto; color: #dfe2ee; }
+  .toml .c { color: #8a8fac; } .toml .h { color: var(--teal); } .toml .s { color: var(--violet); } .toml .n { color: var(--blue); } .toml .b { color: #ff8f6b; }
+
+  /* Trust: the promise, and three facts under it, on the same left edge. */
+  .facts { padding: 160px 0 0; }
+  .lead { color: var(--muted); font-size: 1.0625rem; max-width: 34em; margin: 0 0 48px; text-wrap: pretty; }
+  .facts dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px 48px; margin: 0; font-size: 0.9375rem; padding-top: 28px; border-top: 1px solid var(--line); }
+  .facts dt { font-weight: 600; margin-bottom: 4px; }
+  .facts dd { margin: 0; color: var(--muted); text-wrap: pretty; }
+  .facts dd a { color: var(--text); }
+
+  /* Closing: the install command again, over the planet's rim. */
+  .end { position: relative; text-align: center; padding: 160px 0 340px; overflow: hidden; }
+  .end .planet { top: auto; bottom: 0; translate: -50% 69%; width: min(1500px, 190vw); mask-image: none; }
+  .end .install { margin: 0 auto; }
+  .end .meta { max-width: none; }
+  .end > .wrap > p:not(.meta) { color: var(--muted); font-size: 1.1875rem; margin: 0 0 32px; }
+
+  footer { position: relative; display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; padding: 28px 0 40px; color: var(--faint); font-size: 0.875rem; border-top: 1px solid var(--line); }
+  footer nav { display: flex; gap: 20px; height: auto; }
+  footer a { text-decoration: none; }
+
+  @media (hover: hover) {
+    nav .out:hover, footer a:hover { color: var(--text); }
+    .copy:hover { filter: brightness(0.92); }
+    .keys button:hover { background: linear-gradient(#33384f, #232738); }
+  }
+
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  @media (max-width: 760px) {
+    .hero { padding-top: 40px; }
+    .stage { margin-top: 90px; }
+    .row { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-top: 96px; }
+    .menus { height: 400px; }
+    .menu.main { right: 12px; }
+    .menu.sub { display: none; }
+    .facts { padding-top: 112px; }
+    .facts dl { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .end { padding: 112px 0 220px; }
+    .keys .gap { display: none; }
+    /* One line that scrolls, rather than five that wrap; Copy takes all of it. */
+    /* The keys shrink to fit two rows: arrows for focus, symbols for open and close. */
+    .sky::before { mask-image: radial-gradient(ellipse 100% 430px at 50% 320px, transparent 70%, #000 100%), linear-gradient(#000 55%, transparent); }
+    .keys { gap: 6px; }
+    .keys button { padding: 8px 11px; }
+    .keys [data-cmd^="focus"] kbd, .keys [data-cmd="open"] span, .keys [data-cmd="close"] span { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glow, .copy, .keys button { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="sky" aria-hidden="true"></div>
+
+<div class="wrap">
+  <nav aria-label="Main">
+    <a class="brand" href="#"><img src="logo.webp" alt="" width="34" height="34">Planets</a>
+    <a class="out" href="https://github.com/vibeslop/Planets">GitHub</a>
+  </nav>
+
+</div>
+
+<main>
+<div class="top">
+<div class="wrap">
+  <header class="hero">
+    <h1>Every window in its place.</h1>
+    <p class="lede">Planets is a free tiling window manager for macOS. Your windows fill the screen side by side, and nine workspaces are each one key away.</p>
+    <div class="install" id="install">
+      <code id="cmd">curl -fsSL https://raw.githubusercontent.com/vibeslop/Planets/main/install.sh | sh</code>
+      <button class="copy" type="button" data-copy="cmd">Copy</button>
+    </div>
+    <p class="meta">Paste it into Terminal · macOS 26 or later on Apple silicon · <a href="https://github.com/vibeslop/Planets/blob/main/install.sh">Read the script</a></p>
+  </header>
+</div>
+
+<div class="stage">
+  <div class="planet" aria-hidden="true"><img src="planet-1024.webp" srcset="planet-1024.webp 1024w, planet-2048.webp 2048w" sizes="min(1535px, 141vw)" alt="" width="1024" height="1024"></div>
+  <div class="wrap">
+    <div class="screen" id="screen" role="img" aria-label="A Mac running Planets, its windows tiled side by side. The keys below drive it, and so do Option with 1 to 3 or H, J, K and L.">
+      <div class="mac" id="mac">
+        <img class="wall" src="planet-1024.webp" srcset="planet-1024.webp 1024w, planet-2048.webp 2048w" sizes="min(613px, 57vw)" alt="" width="1024" height="1024">
+        <div class="menubar" aria-hidden="true">
+          <img class="logo" src="logo.webp" alt="" width="16" height="16">
+          <b id="appname">Terminal</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span>
+          <span class="right"><span class="strip" id="strip"></span><span>Tue 9:41</span></span>
+        </div>
+        <div class="desk" id="desk">
+          <div class="hint" id="hint" hidden><span>Workspace <span id="hintws"></span> is empty. Open one with <kbd>⌘N</kbd> below.</span></div>
+          <div class="glow" id="glow" hidden></div>
+        </div>
+      </div>
+    </div>
+    <div class="keys" role="group" aria-label="Demo keys">
+      <button type="button" data-cmd="ws:1"><kbd>⌥1</kbd><span class="sr"> workspace 1</span></button>
+      <button type="button" data-cmd="ws:2"><kbd>⌥2</kbd><span class="sr"> workspace 2</span></button>
+      <button type="button" data-cmd="ws:3"><kbd>⌥3</kbd><span class="sr"> workspace 3</span></button>
+      <span class="gap"></span>
+      <button type="button" data-cmd="focus:left"><kbd>⌥H</kbd><span aria-hidden="true">←</span><span class="sr"> focus left</span></button>
+      <button type="button" data-cmd="focus:down"><kbd>⌥J</kbd><span aria-hidden="true">↓</span><span class="sr"> focus down</span></button>
+      <button type="button" data-cmd="focus:up"><kbd>⌥K</kbd><span aria-hidden="true">↑</span><span class="sr"> focus up</span></button>
+      <button type="button" data-cmd="focus:right"><kbd>⌥L</kbd><span aria-hidden="true">→</span><span class="sr"> focus right</span></button>
+      <span class="gap"></span>
+      <button type="button" data-cmd="open"><kbd>⌘N</kbd><span>new window</span></button>
+      <button type="button" data-cmd="close"><kbd>⌥⇧Q</kbd><span>close</span></button>
+    </div>
+    <p class="caption"><span class="pointer">Try it: click a key.</span><span class="touch">Try it: tap a key.</span></p>
+    <p class="sr" aria-live="polite" id="status"></p>
+  </div>
+</div>
+</div>
+
+<div class="wrap">
+  <section class="row" aria-labelledby="menu">
+    <div class="say">
+      <h2 id="menu">Everything in one menu.</h2>
+      <p><kbd>⌥B</kbd> opens the Planets menu: what’s on each workspace, every shortcut, your settings, and an update when one is ready. Shortcuts leave alone the keys that type é and ñ, and follow the letters on Dvorak and AZERTY keyboards.</p>
+    </div>
+    <figure class="shot" role="img" aria-label="The Planets menu, open from the workspace strip in the menu bar. It lists workspace 1 with Terminal, Safari and Notes, workspace 2 with Xcode and Mail, and workspace 3 with Music, then Pause Tiling, Open Config, Keyboard Shortcuts, Open at Login, Restart to Update and Quit Planets. Its Keyboard Shortcuts submenu is open.">
+      <div class="menus" aria-hidden="true">
+        <div class="bar"><span class="strip"><span class="current">1</span><span>2</span><span>3</span></span><span>Tue 9:41</span></div>
+        <div class="menu main">
+          <div><span class="ws c">1</span><span class="apps">Terminal, Safari, Notes</span></div>
+          <div><span class="ws">2</span><span class="apps">Xcode, Mail</span></div>
+          <div><span class="ws">3</span><span class="apps">Music</span></div>
+          <hr>
+          <div><span class="tick"></span>Pause Tiling</div>
+          <div><span class="tick"></span>Open Config<span class="k">⌘,</span></div>
+          <div class="on"><span class="tick"></span>Keyboard Shortcuts<span class="k">›</span></div>
+          <div><span class="tick">✓</span>Open at Login</div>
+          <hr>
+          <div><span class="tick"></span>Restart to Update to 0.1.2</div>
+          <div><span class="tick"></span>Quit Planets<span class="k">⌘Q</span></div>
+        </div>
+        <div class="menu sub">
+          <div class="h">Workspaces</div>
+          <div>Go to workspace<span class="k">⌥ 1–9</span></div>
+          <div>Send window to workspace<span class="k">⌥⇧ 1–9</span></div>
+          <hr>
+          <div class="h">Focus</div>
+          <div>Focus neighbouring window<span class="k">⌥ H J K L</span></div>
+          <hr>
+          <div class="h">Windows</div>
+          <div>Close window<span class="k">⌥⇧ Q</span></div>
+          <hr>
+          <div class="h">Other</div>
+          <div>Open the workspace menu<span class="k">⌥ B</span></div>
+        </div>
+      </div>
+    </figure>
+  </section>
+
+  <section class="row" aria-labelledby="config">
+    <div class="say">
+      <h2 id="config">Settings in one text file.</h2>
+      <p>Changes apply the moment you save. A mistake keeps the last working version running, and the menu says what’s wrong. Updates install by themselves while you’re away from the keyboard; <code>auto_update = false</code> turns that off.</p>
+    </div>
+    <figure class="shot" role="img" aria-label="The settings file, planets.toml, open in an editor: gaps between windows, the glow’s colour, and a rule that puts Slack on workspace 3.">
+      <div class="pane" aria-hidden="true">
+        <div class="tb"><span class="tl"><i></i><i></i><i></i></span><span>planets.toml</span></div>
+<pre class="toml"><span class="h">[tiling]</span>
+<span class="c"># Space between windows, and around them.</span>
+inner_gap = <span class="n">10</span>
+outer_gap = <span class="n">10</span>
+
+<span class="h">[appearance]</span>
+glow_color = <span class="s">"gold"</span>
+
+<span class="h">[[rule]]</span>
+app = <span class="s">"Slack"</span>
+workspace = <span class="s">"3"</span></pre>
+      </div>
+    </figure>
+  </section>
+
+  <section class="facts" aria-labelledby="back">
+    <h2 id="back">Your windows always come back.</h2>
+    <p class="lead">Planets keeps other workspaces’ windows in a corner of the screen. Quit it and every one comes back. If it crashes, it opens again by itself, with each window on its workspace.</p>
+    <dl>
+      <div><dt>One permission</dt><dd>Accessibility, which macOS requires before any app can move another app’s windows.</dd></div>
+      <div><dt>Easy to remove</dt><dd>Quit Planets from its menu, then delete it from Applications.</dd></div>
+      <div><dt>Open source</dt><dd>Free under the MIT License. <a href="https://github.com/vibeslop/Planets">Read the code</a></dd></div>
+    </dl>
+  </section>
+</div>
+
+<section class="end">
+  <div class="planet" aria-hidden="true"><img src="planet-1024.webp" srcset="planet-1024.webp 1024w, planet-2048.webp 2048w" sizes="min(1212px, 154vw)" alt="" width="1024" height="1024" loading="lazy"></div>
+  <div class="wrap">
+    <h2>Install Planets</h2>
+    <p>Paste this into Terminal. Planets opens in your menu bar.</p>
+    <div class="install">
+      <code id="cmd2">curl -fsSL https://raw.githubusercontent.com/vibeslop/Planets/main/install.sh | sh</code>
+      <button class="copy" type="button" data-copy="cmd2">Copy</button>
+    </div>
+    <p class="meta">Not notarized, so it installs with curl · <a href="https://github.com/vibeslop/Planets/blob/main/install.sh">Read the script</a> · <span id="version"><a href="https://github.com/vibeslop/Planets/releases">Release notes</a></span></p>
+  </div>
+</section>
+
+</main>
+
+<div class="wrap">
+  <footer>
+    <span>Planets · MIT License</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/vibeslop/Planets">Source</a>
+      <a href="https://github.com/vibeslop/Planets/releases">Releases</a>
+      <a href="https://github.com/vibeslop/Planets/issues">Report a problem</a>
+    </nav>
+  </footer>
+</div>
+
+<script>
+// The demo runs a small copy of Planets' dwindle layout (Sources/PlanetsCore/Dwindle.swift):
+// each new window splits the focused one along its longer side, and closing one gives its
+// space back to its sibling. Windows snap into place, as in the app; only the glow glides.
+(() => {
+  const W = 1280, H = 772, GAP = 10, MAX = 6;
+  const $ = (id) => document.getElementById(id);
+  const screen = $("screen"), mac = $("mac"), desk = $("desk"), glow = $("glow"), status = $("status");
+
+  // Scales the 1280-wide drawing to the screen's width.
+  const fit = () => mac.style.setProperty("--s", screen.clientWidth / 1280);
+  fit();
+  new ResizeObserver(fit).observe(screen);
+
+  const trees = { 1: null, 2: null, 3: null }, focus = { 1: null, 2: null, 3: null }, wins = {};
+  let current = 1, nextId = 0, nextOpen = 0;
+  const OPEN = ["Messages", "Finder", "Notes", "Safari", "Terminal", "Music", "Mail", "Xcode"];
+  const TITLE = { Terminal: "~ — zsh", Safari: "Saturn — Wikipedia", Notes: "Notes", Xcode: "Dwindle.swift", Mail: "Inbox", Music: "Music", Messages: "Mira", Finder: "Home" };
+
+  const size = (t) => !t ? 0 : "id" in t ? 1 : size(t.a) + size(t.b);
+  const count = (n) => size(trees[n]);
+  const termText = () => {
+    const rows = [1, 2, 3].map((n) => `${(n + (n === current ? "*" : "")).padEnd(6)}${String(count(n)).padEnd(9)}${n === current ? "Built-in Retina Display" : ""}`);
+    return `<span class="pr">~</span> planet query workspaces\n<span class="dim">NAME  WINDOWS  MONITOR</span>\n${rows.join("\n")}\n\n<span class="pr">~</span> planet config check\n~/.config/planets/planets.toml: <span class="ok">ok</span>\n\n<span class="pr">~</span> <i class="cur"></i>`;
+  };
+
+  const BODY = {
+    Terminal: () => `<pre class="term"></pre>`,
+    Safari: () => `<div class="bar-url"><span>‹ ›</span><div class="url">en.wikipedia.org/wiki/Saturn</div><span>⋯</span></div>
+      <div class="page"><article><h3>Saturn</h3><p class="sub">From Wikipedia, the free encyclopedia</p>
+      <p>Saturn is the sixth planet from the Sun and the second largest in the Solar System, after Jupiter. It is a gas giant, with an average radius about nine times that of Earth.</p>
+      <p>Its rings are made mostly of ice, with smaller amounts of rock and dust. Its largest moon is Titan.</p>
+      <p>Saturn is visible to the naked eye, and has been known since prehistoric times.</p></article>
+      <aside class="infobox"><div class="saturn"></div>Saturn and its rings</aside></div>`,
+    Notes: () => `<div class="notes"><div class="list"><div class="on"><b>Stargazing</b><span>Saturday</span></div><div><b>Groceries</b><span>Yesterday</span></div><div><b>Window ideas</b><span>Monday</span></div></div>
+      <div class="note"><h4>Stargazing</h4><ul><li class="done">Charge the camera</li><li class="done">Book the cabin</li><li>Pack the tripod</li><li>Check when Saturn rises</li><li>Hot chocolate</li></ul></div></div>`,
+    Xcode: () => `<div class="tabs"><span class="on">Dwindle.swift</span><span>Workspace.swift</span></div><pre class="code"><div><span class="cm">/// Every new window splits the focused one.</span></div><div><span class="k">public indirect enum</span> <span class="ty">DwindleNode</span>: <span class="ty">Equatable</span> {</div><div>    <span class="k">case</span> leaf(<span class="ty">WindowID</span>)</div><div>    <span class="k">case</span> split(axis: <span class="ty">Axis</span>?, ratio: <span class="ty">Double</span>,</div><div>               first: <span class="ty">DwindleNode</span>, second: <span class="ty">DwindleNode</span>)</div><div></div><div>    <span class="k">public var</span> leaves: [<span class="ty">WindowID</span>] {</div><div>        <span class="k">switch self</span> {</div><div>        <span class="k">case</span> .leaf(<span class="k">let</span> id): [id]</div><div>        <span class="k">case</span> .split(_, _, <span class="k">let</span> first, <span class="k">let</span> second):</div><div>            first.<span class="fn">leaves</span> + second.<span class="fn">leaves</span></div><div>        }</div><div>    }</div><div>}</div></pre>`,
+    Mail: () => `<div class="mail">${[
+      ["M", "#b58ad8", "Mira Okafor", "9:12", "Photos from the observatory", "The ones of the rings came out better than I hoped."],
+      ["J", "#4fe0c8", "Jonas Berg", "8:40", "Lunch on Thursday?", "There’s a new place by the station."],
+      ["A", "#ffcc33", "Ada Lindqvist", "Yesterday", "Re: the trip to La Palma", "Flights are booked for the 14th."],
+      ["S", "#8a8cff", "Night Sky Club", "Monday", "This month’s night sky", "Saturn is at its best after sunset."],
+      ["L", "#ff8a7a", "Leo", "Sunday", "Board games", "Bring the one with the spaceships."],
+    ].map(([i, c, n, t, s, p], k) => `<div class="row${k === 0 ? " on" : ""}"><span class="av" style="background:${c}">${i}</span><div class="tx"><div class="top"><b>${n}</b><span>${t}</span></div><div class="s">${s}</div><div class="p">${p}</div></div></div>`).join("")}</div>`,
+    Music: () => `<div class="music"><div class="art"><img src="planet-1024.webp" alt="" loading="lazy"><span>The Planets</span></div><div class="info"><h4>The Planets</h4><p class="by">Gustav Holst</p><ol>
+      <li>Mars<span>7:05</span></li><li>Venus<span>8:10</span></li><li>Mercury<span>4:02</span></li><li class="on">Jupiter<span>7:51</span></li><li>Saturn<span>9:22</span></li><li>Uranus<span>5:57</span></li><li>Neptune<span>7:47</span></li></ol></div></div>`,
+    Messages: () => `<div class="msgs"><span class="when">Today 9:30</span><p>Are you coming tonight?</p><p class="me">Yes! Bringing the telescope</p><p>Saturn should be up by ten</p><p class="me">🪐</p></div>`,
+    Finder: () => `<div class="finder"><aside><b>Favourites</b><div class="on">Home</div><div>Desktop</div><div>Documents</div><div>Downloads</div></aside><div class="grid">${["Desktop", "Documents", "Photos", "Projects", "Music"].map((n) => `<div class="f"><i></i>${n}</div>`).join("")}<div class="f doc"><i></i>planets.toml</div></div></div>`,
+  };
+
+  const insert = (t, target, id) => !t ? { id } : "id" in t ? (t.id === target ? { a: t, b: { id } } : t) : { a: insert(t.a, target, id), b: insert(t.b, target, id) };
+  const remove = (t, id) => {
+    if (!t || "id" in t) return t && t.id === id ? null : t;
+    const a = remove(t.a, id), b = remove(t.b, id);
+    return a && b ? { a, b } : a || b;
+  };
+  const layout = (t, r, out = {}) => {
+    if (!t) return out;
+    if ("id" in t) { out[t.id] = r; return out; }
+    const across = r.w >= r.h, half = ((across ? r.w : r.h) - GAP) / 2;
+    layout(t.a, across ? { ...r, w: half } : { ...r, h: half }, out);
+    layout(t.b, across ? { ...r, x: r.x + half + GAP, w: half } : { ...r, y: r.y + half + GAP, h: half }, out);
+    return out;
+  };
+  const frames = (n = current) => layout(trees[n], { x: GAP, y: GAP, w: W - 2 * GAP, h: H - 2 * GAP });
+  const nearest = (n, f) => {
+    let best = null, bestD = Infinity;
+    for (const [k, r] of Object.entries(frames(n))) {
+      const d = Math.hypot(r.x + r.w / 2 - f.x - f.w / 2, r.y + r.h / 2 - f.y - f.h / 2);
+      if (d < bestD) { bestD = d; best = +k; }
+    }
+    return best;
+  };
+
+  const add = (n, app) => {
+    const id = nextId++, el = document.createElement("div");
+    el.className = `win app-${app.toLowerCase()}`;
+    el.dataset.id = id;
+    el.innerHTML = `<div class="tb"><span class="tl"><i></i><i></i><i></i></span><span class="tt">${TITLE[app]}</span></div><div class="content">${BODY[app]()}</div>`;
+    desk.insertBefore(el, glow);
+    wins[id] = { app, el };
+    trees[n] = insert(trees[n], focus[n], id);
+    focus[n] = id;
+    return id;
+  };
+  const take = (n) => {
+    const id = focus[n], f = frames(n)[id];
+    trees[n] = remove(trees[n], id);
+    focus[n] = trees[n] ? nearest(n, f) : null;
+    return id;
+  };
+
+  const say = (text) => { status.textContent = text; };
+  // Each command returns true when the glow should jump rather than glide.
+  const cmds = {
+    ws(n) { current = n; say(`Workspace ${n}`); return true; },
+    send(n) {
+      if (n === current || focus[current] == null) return;
+      const id = take(current);
+      trees[n] = insert(trees[n], focus[n], id);
+      focus[n] = id;
+      say(`Sent ${wins[id].app} to workspace ${n}`);
+    },
+    open() {
+      if (count(current) >= MAX) return say(`The demo stops at ${MAX} windows`);
+      say(`Opened ${wins[add(current, OPEN[nextOpen++ % OPEN.length])].app}`);
+    },
+    close() {
+      if (focus[current] == null) return;
+      const id = take(current);
+      say(`Closed ${wins[id].app}`);
+      wins[id].el.remove();
+      delete wins[id];
+    },
+    focus(dir) {
+      const all = frames(), f = all[focus[current]];
+      if (!f) return;
+      const horizontal = dir === "left" || dir === "right";
+      let best = null, bestScore = Infinity;
+      for (const [k, r] of Object.entries(all)) {
+        const ahead = { left: f.x - (r.x + r.w), right: r.x - (f.x + f.w), up: f.y - (r.y + r.h), down: r.y - (f.y + f.h) }[dir];
+        const overlap = horizontal ? Math.min(f.y + f.h, r.y + r.h) - Math.max(f.y, r.y) : Math.min(f.x + f.w, r.x + r.w) - Math.max(f.x, r.x);
+        if (ahead < 0 || overlap <= 0) continue;
+        const score = ahead * 10 + (horizontal ? Math.abs(r.y - f.y) : Math.abs(r.x - f.x));
+        if (score < bestScore) { bestScore = score; best = +k; }
+      }
+      if (best != null) { focus[current] = best; say(`Focused ${wins[best].app}`); }
+    },
+  };
+
+  const px = (r) => ({ left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+  const render = (instant) => {
+    const all = frames();
+    for (const [id, w] of Object.entries(wins)) {
+      const r = all[id];
+      w.el.hidden = !r;
+      if (r) Object.assign(w.el.style, px(r));
+      w.el.classList.toggle("focused", +id === focus[current]);
+      if (w.app === "Terminal" && r) w.el.querySelector(".term").innerHTML = termText();
+    }
+    const f = all[focus[current]];
+    // A workspace switch moves the light at once; within a workspace it glides.
+    glow.classList.toggle("instant", !!instant || glow.hidden);
+    glow.hidden = !f;
+    if (f) Object.assign(glow.style, px({ x: f.x - 1, y: f.y - 1, w: f.w + 2, h: f.h + 2 }));
+    glow.offsetWidth;
+    glow.classList.remove("instant");
+    $("appname").textContent = f ? wins[focus[current]].app : "Finder";
+    $("hint").hidden = !!f || intro.length > 0;
+    $("hintws").textContent = current;
+    $("strip").innerHTML = [1, 2, 3].map((n) => `<span class="${n === current ? "current" : trees[n] ? "" : "empty"}">${n}</span>`).join("");
+  };
+
+  // First visit in a session: workspace 1 fills one window at a time, to show the layout
+  // at work. It waits until the demo's top quarter is in view, which on a laptop is the
+  // first screen. Any key finishes it at once.
+  add(2, "Xcode"); add(2, "Mail"); add(3, "Music");
+  const intro = ["Terminal", "Safari", "Notes"];
+  let timers = [];
+  const finishIntro = () => { timers.forEach(clearTimeout); timers = []; while (intro.length) add(1, intro.shift()); };
+  let seen = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  try { seen ||= !!sessionStorage.getItem("planets-intro"); } catch {}
+  if (seen) finishIntro();
+  else new IntersectionObserver(([entry], io) => {
+    if (!entry.isIntersecting) return;
+    io.disconnect();
+    try { sessionStorage.setItem("planets-intro", "1"); } catch {}
+    intro.forEach((_, i) => timers.push(setTimeout(() => { add(1, intro.shift()); if (!intro.length) timers = []; render(); }, 400 + i * 650)));
+  }, { threshold: 0.25 }).observe($("screen"));
+  render();
+
+  const run = (cmd) => {
+    finishIntro();
+    const [verb, arg] = cmd.split(":");
+    render(cmds[verb](arg && isNaN(arg) ? arg : +arg));
+  };
+
+  document.querySelector(".keys").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-cmd]");
+    if (b) run(b.dataset.cmd);
+  });
+  desk.addEventListener("pointerdown", (e) => {
+    const w = e.target.closest(".win");
+    if (!w) return;
+    finishIntro();
+    focus[current] = +w.dataset.id;
+    render();
+  });
+
+  // Option with a key types a symbol on a Mac (⌥1 is ¡), so match the physical key.
+  const KEYS = { KeyH: "focus:left", KeyJ: "focus:down", KeyK: "focus:up", KeyL: "focus:right" };
+  addEventListener("keydown", (e) => {
+    if (!e.altKey || e.metaKey || e.ctrlKey) return;
+    const digit = /^Digit([1-3])$/.exec(e.code)?.[1];
+    const cmd = digit ? (e.shiftKey ? "send:" : "ws:") + digit : e.shiftKey ? (e.code === "KeyQ" ? "close" : null) : KEYS[e.code];
+    if (!cmd) return;
+    e.preventDefault();
+    run(cmd);
+    // Presses the matching key below, so you can see which one you hit.
+    const b = document.querySelector(`.keys [data-cmd="${cmd}"]`);
+    if (b) { b.classList.add("down"); setTimeout(() => b.classList.remove("down"), 140); }
+  });
+
+  fetch("https://api.github.com/repos/vibeslop/Planets/releases/latest")
+    .then((r) => r.ok ? r.json() : Promise.reject())
+    .then((r) => {
+      const date = new Date(r.published_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+      $("version").innerHTML = `<a href="${r.html_url}" title="Released ${date}">Version ${r.tag_name.replace(/^v/, "")}</a>`;
+    })
+    .catch(() => {});
+
+  for (const code of document.querySelectorAll(".install code")) {
+    const edge = () => code.classList.toggle("cut", code.scrollLeft + code.clientWidth < code.scrollWidth - 1);
+    new ResizeObserver(edge).observe(code);
+    code.addEventListener("scroll", edge, { passive: true });
+  }
+
+  for (const b of document.querySelectorAll("[data-copy]")) {
+    b.addEventListener("click", async () => {
+      const code = $(b.dataset.copy);
+      try { await navigator.clipboard.writeText(code.textContent); b.textContent = "Copied"; }
+      // Without clipboard access, select the command so ⌘C copies it.
+      catch { getSelection().selectAllChildren(code); b.textContent = "Press ⌘C"; }
+      setTimeout(() => { b.textContent = "Copy"; }, 1600);
+    });
+  }
+})();
+</script>
+</body>
+</html>
