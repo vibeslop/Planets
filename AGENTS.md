@@ -1,21 +1,39 @@
 # Agents
 
-## Test in the VM
+## Verification
 
-Anything that moves windows, presses keys or records the screen runs in the Tart VM, not on this Mac. Build here, run there:
+Run deterministic checks before pushing:
+
+```sh
+./scripts/check.sh
+```
+
+`scripts/lint.sh` enforces:
+- No inline comments except `SAFETY:` comments (and shebangs / `swift-tools-version`).
+- No AppleScript `System Events` (use `build/input` instead).
+- Interactive test scripts source `scripts/guard-host.sh`.
+- Shell syntax, `site/index.html` JS/assets, `Info.plist`, and `release-certificate.sha1`.
+
+## VM Testing
+
+Run window/input/recording tests in the Tart VM, not on this Mac:
 
 ```sh
 ./scripts/build-app.sh && ./scripts/build-fixture.sh
 ./scripts/vm.sh up
-./scripts/vm.sh run 'MIN_IDLE=0 ./scripts/live-test.sh'
-./scripts/vm.sh shot        # then look at /tmp/planets-vm/shot.png
+./scripts/vm.sh run './scripts/live-test.sh'
+./scripts/vm.sh shot
 ./scripts/vm.sh down
 ```
 
-The VM sees the project through a read-only share that keeps a folder deleted and made again as it was, and the build scripts do exactly that. After rebuilding, run `./scripts/vm.sh down && ./scripts/vm.sh up` before testing, or the VM runs the old build or finds an empty bundle.
+- `vm.sh run` exports `PLANETS_IN_VM=1` / `MIN_IDLE=0` and auto-restarts the VM if host binaries are newer than the VirtioFS share.
+- Keep macOS defaults in the VM. Run `./scripts/vm.sh reset` after any test that changes system settings.
+- Drive UI with `build/input` (keys, clicks, drags).
 
-The VM keeps macOS's default settings on purpose, so don't change them to match this Mac. Run `./scripts/vm.sh reset` after anything that changes them. `./scripts/vm.sh` with no arguments lists the rest. Drive apps there with `build/input` (keys, clicks, drags), not AppleScript's System Events: it waits on a permission prompt nobody sees.
+## Test Scripts
 
-`./scripts/flicker-test.sh` records workspace switches frame by frame and counts the frames where the desktop shows through or both workspaces show at once; run it in the VM or, on this Mac, through `./scripts/when-idle.sh`. `./scripts/fullscreen-input-test.sh` times how soon a full-screen window takes keys again after its workspace's key.
-
-`./scripts/switch-bench.sh` times workspace switches with a quick app and a slow one; given another build's app, CLI and environment prefix, it times that one the same way, for comparing two builds in the VM. Timings that should mean something on a real display need real hardware: they run on this Mac, only once the user has been idle. `./scripts/bench-cycle.sh` is one, ⌘` from key press to pixels against a throwaway Chromium browser.
+- `./scripts/live-test.sh`: end-to-end window management suite (VM).
+- `./scripts/flicker-test.sh`: frame-by-frame workspace switch flicker check (VM or idle host via `./scripts/when-idle.sh`).
+- `./scripts/fullscreen-input-test.sh`: full-screen input latency after workspace switch (VM).
+- `./scripts/switch-bench.sh [app cli prefix]`: workspace switch benchmark for comparing builds (VM).
+- `./scripts/bench-cycle.sh`: real-hardware `⌘\`` key-to-pixel latency benchmark against Chromium (idle host only).

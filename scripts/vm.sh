@@ -1,38 +1,74 @@
 #!/bin/zsh
-# Runs Planets in a macOS 27 virtual machine, so live tests, screen captures and
-# synthetic key presses move the VM's windows instead of yours. Tart (tart.run) runs the
-# VM. Builds stay on this Mac, and the VM sees the project read-only. Its display is
-# 1920x1080 at 1x.
-#
-#   scripts/vm.sh create        download the image (34 GB, about 41 GB on disk) and size the VM
-#   scripts/vm.sh up            start it without a window and wait until it answers
-#   scripts/vm.sh run 'cmd'     run cmd in the project folder inside the VM
-#   scripts/vm.sh shot [file]   save the VM's screen here (default /tmp/planets-vm/shot.png)
-#   scripts/vm.sh view          watch and use the VM in Screen Sharing (admin / admin)
-#   scripts/vm.sh shell         open a shell inside the VM
-#   scripts/vm.sh down          shut it down
-#   scripts/vm.sh reset         throw the VM away and start again from the untouched image
-#
-# The VM keeps macOS's default settings, the Mac a new user has, so it shows what your own
-# setup hides. Reset it after a test that changes settings.
-#
-# Nobody else uses the VM's keyboard, so the scripts' idle guards can be skipped:
-#   scripts/vm.sh run 'MIN_IDLE=0 ./scripts/live-test.sh'
-# The project is read-only in there; $VMOUT inside the VM is /tmp/planets-vm here, the way
-# to bring results back: scripts/vm.sh run 'cp -R /tmp/planets-live "$VMOUT"'
 set -u
 cd "$(dirname "$0")/.."
-VM=${PLANETS_VM:-planets}
-# Pinned to the build already downloaded, so a reset copies it locally instead of fetching a
-# newer :latest. Moving to a newer macOS means changing this and downloading again.
+VM=${PLANETS_VM:-dev}
 IMAGE=ghcr.io/cirruslabs/macos-golden-gate-base@sha256:5302a9ea6cd68c059d00fa253fe75c8ebdf4e0dc8c45d4e136ecc6e7a4c02b70
 OUT=/tmp/planets-vm
 SHARE="/Volumes/My Shared Files"
 
-# The guest agent (`tart exec`) runs in the logged-in session, and the image grants it
-# Accessibility, Screen Recording and event posting, so GUI tests work without SSH.
 guest() { tart exec "$VM" "$@"; }
 ready() { guest test -d "$SHARE/planets" 2>/dev/null; }
+
+start_vm() {
+  mkdir -p "$OUT"
+  tart stop "$VM" >/dev/null 2>&1
+  nohup tart run --no-graphics --no-audio --dir="planets:${PWD}:ro" --dir="out:${OUT}" "$VM" \
+    > "$OUT/tart.log" 2>&1 &!
+  for i in {1..90}; do ready && break; sleep 2; done
+  ready || { echo "$VM didn't answer within 3 minutes; see $OUT/tart.log"; exit 1; }
+  guest /bin/zsh -c 'screencapture -x /tmp/warmup.png; sleep 2; killall UserNotificationCenter; rm /tmp/warmup.png' 2>/dev/null
+}
+
+build_signature() {
+  local root=$1
+  local rel files=(
+    build/Planets.app/Contents/MacOS/Planets
+    build/planet
+    build/Fixture.app/Contents/MacOS/Fixture
+  )
+  local out=""
+  for rel in "${files[@]}"; do
+    if [[ -f "$root/$rel" ]]; then
+      out+="$(shasum -a 256 "$root/$rel" | awk '{print $1}') $rel"$'\n'
+    else
+      out+="missing $rel"$'\n'
+    fi
+  done
+  printf '%s' "$out"
+}
+
+sync_build() {
+  local host_sig guest_sig
+  host_sig=$(build_signature "$PWD")
+  guest_sig=$(guest /bin/zsh -c '
+    root="$1"
+    for rel in build/Planets.app/Contents/MacOS/Planets build/planet build/Fixture.app/Contents/MacOS/Fixture; do
+      if [[ -f "$root/$rel" ]]; then
+        shasum -a 256 "$root/$rel" | awk -v r="$rel" "{print \$1, r}"
+      else
+        print -- "missing $rel"
+      fi
+    done
+  ' _ "$SHARE/planets" 2>/dev/null)
+  if [[ "$host_sig" != "$guest_sig" ]]; then
+    echo "build changed since VM mount; restarting $VM" >&2
+    start_vm
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/vm.sh <command>
+  create        clone the pinned image and size the VM
+  up            start the VM headless and wait until ready
+  run 'cmd'     run cmd in the project folder inside the VM (restarts if build changed)
+  shot [file]   capture the VM screen (default /tmp/planets-vm/shot.png)
+  view          open Screen Sharing (admin / admin)
+  shell         open an interactive shell in the VM
+  down          stop the VM
+  reset         delete and recreate the VM from the pinned image
+EOF
+}
 
 case ${1:-} in
   create)
@@ -40,18 +76,13 @@ case ${1:-} in
   up)
     mkdir -p "$OUT"
     ready && exit 0
-    nohup tart run --no-graphics --no-audio --dir="planets:${PWD}:ro" --dir="out:${OUT}" "$VM" \
-      > "$OUT/tart.log" 2>&1 &!
-    for i in {1..90}; do ready && break; sleep 2; done
-    ready || { echo "$VM didn't answer within 3 minutes; see $OUT/tart.log"; exit 1; }
-    # macOS asks every 30 days before a program records the screen without the window
-    # picker, in a dialog that would sit in front of every test (and steal focus from it).
-    # Seeding its record in advance doesn't stick, so set the question off now and close it.
-    guest /bin/zsh -c 'screencapture -x /tmp/warmup.png; sleep 2; killall UserNotificationCenter; rm /tmp/warmup.png' 2>/dev/null
+    start_vm
     echo "$VM is up" ;;
   run)
     shift
-    guest /bin/zsh -lc "export VMOUT='$SHARE/out'; cd '$SHARE/planets' && $*" ;;
+    ready || start_vm
+    sync_build
+    guest /bin/zsh -lc "export PLANETS_IN_VM=1 MIN_IDLE=0 VMOUT='$SHARE/out'; cd '$SHARE/planets' && $*" ;;
   shot)
     guest screencapture -x "$SHARE/out/shot.png" || exit 1
     [[ -n ${2:-} ]] && mv "$OUT/shot.png" "$2"
@@ -65,5 +96,5 @@ case ${1:-} in
   reset)
     tart stop "$VM" >/dev/null 2>&1; tart delete "$VM" && "$0" create && "$0" up ;;
   *)
-    awk 'NR > 1 && !/^#/ {exit} NR > 1 {sub(/^# ?/, ""); print}' "$0"; exit 2 ;;
+    usage; exit 2 ;;
 esac
