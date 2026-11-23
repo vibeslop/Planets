@@ -1,24 +1,20 @@
 # Planets
 
-A tiling window manager for macOS 26 and later, on Macs with Apple silicon.
+Tiling window manager for macOS 26+ on Apple silicon.
 
 ## Install
-
-Paste this into Terminal:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/vibeslop/Planets/main/install.sh | sh
 ```
 
-The script installs Planets in `/Applications`, links the `planet` command into a folder on your `PATH`, and starts Planets in the menu bar. From then on Planets updates itself: it checks for a new release daily, installs it in the background, and restarts into it once you've left the keyboard for a minute, with every window where it was. `auto_update = false` in the config turns that off, and running the script again updates by hand.
+Installs to `/Applications`, symlinks `planet` onto `PATH`, and launches in the menu bar. Requires Accessibility permission. Not notarized (curl avoids browser quarantine).
 
-Planets is not notarized, so macOS blocks a copy downloaded in a browser. The script downloads it with curl, which macOS doesn't block.
-
-Planets asks for Accessibility, the permission macOS requires before an app can move other apps' windows.
+Checks for updates daily and restarts when idle for 60s, preserving layout. Set `auto_update = false` to disable. Re-run the install script to update manually.
 
 ### From source
 
-Building needs Xcode, not only the Command Line Tools: its `actool` renders the app icon.
+Requires Xcode (`actool` compiles the app icon).
 
 ```sh
 ./scripts/build-app.sh
@@ -27,24 +23,25 @@ ln -s /Applications/Planets.app/Contents/Helpers/planet /usr/local/bin/planet
 open -a Planets
 ```
 
-macOS ties the Accessibility permission to the certificate a build is signed with. `./scripts/make-signing-cert.sh` creates a certificate of your own once, so the permission survives rebuilds.
+Run `./scripts/make-signing-cert.sh` once to create a local certificate so Accessibility permissions persist across rebuilds.
 
 ## Use
 
-- ⌥1–9: go to a workspace. ⌥⇧1–9: send the window there.
-- ⌥H J K L: move focus.
-- ⌥B: open the menu, which lists every shortcut.
+- `⌥1–9`: switch workspace
+- `⌥⇧1–9`: move window to workspace
+- `⌥H J K L`: move focus
+- `⌥B`: open menu (lists all shortcuts)
 
-Settings live in `~/.config/planets/planets.toml` and apply on save. `planet config check` checks the file without applying it, and `planet help` lists every command.
+Config: `~/.config/planets/planets.toml` (reloads on save). Run `planet config check` to validate and `planet help` for CLI commands.
 
-## If something goes wrong
+## Recovery
 
-Planets hides the windows of other workspaces in a corner of the screen and puts them back when it quits.
+Hidden workspace windows park off-screen and restore on quit.
 
-- **If Planets crashes,** it opens again by itself and puts each window back on its workspace. If it crashes within 15 seconds of starting, it stays closed. Open it again, then choose **Quit Planets** from its menu to put every window back on screen.
-- **If you turn off Accessibility while Planets runs,** it stops and can't move windows until you turn the permission back on. Then it starts again by itself.
-- **If you force quit Planets,** windows stay where they are. Open it again, then quit it from its menu.
+- **Crash**: auto-restarts and restores layout (disabled if it crashes within 15s of launch. Reopen and choose **Quit Planets** to restore windows).
+- **Accessibility revoked**: pauses until re-enabled, then resumes automatically.
+- **Force quit**: reopen Planets, then choose **Quit Planets** from the menu.
 
 ## License
 
-Planets is licensed under the [MIT License](LICENSE). [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) credits the projects it builds on.
+[MIT](LICENSE). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
