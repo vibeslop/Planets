@@ -2,11 +2,6 @@ import Carbon.HIToolbox
 import CoreGraphics
 import PlanetsCore
 
-/// Maps key names from the config to the key codes the keyboard sends.
-///
-/// Letters, digits and punctuation are looked up in the active keyboard layout, so
-/// "mod+h" is the key that types h, wherever that key sits. Keys the layout doesn't
-/// produce unshifted (digits on AZERTY, for one) fall back to their US-layout position.
 @MainActor
 enum KeyCodes {
     static let fixed: [String: CGKeyCode] = [
@@ -48,7 +43,6 @@ enum KeyCodes {
                     let text = String(utf16CodeUnits: chars, count: length).lowercased()
                     guard let char = text.first else { continue }
                     let name = char.isLetter || char.isNumber ? text : punctuation[char]
-                    // Keypad keys also type digits; the first match is the main row, keep it.
                     if let name, map[name] == nil { map[name] = CGKeyCode(code) }
                 }
             }

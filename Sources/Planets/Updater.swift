@@ -2,20 +2,10 @@ import AppKit
 import PlanetsCore
 import Security
 
-/// Keeps a copy installed from a release up to date: looks at the newest release a minute
-/// after launch and then daily, puts it in place of this copy, and restarts into it once the
-/// keyboard and pointer have rested for a minute. A restart keeps every window where it is,
-/// because the new copy reads the state this one saved.
-///
-/// Only a copy that can restart into the update and keep its Accessibility permission takes
-/// part, which a copy built from source can't: macOS ties the permission to the certificate,
-/// and its certificate is another.
 @MainActor
 final class Updater {
-    /// The version put in place and waiting for a restart.
     private(set) var ready: Version?
     var onReady: (() -> Void)?
-    /// Whether a restart would interrupt nothing.
     var canRestart: () -> Bool = { true }
     var restart: () -> Void = {}
 
@@ -24,12 +14,9 @@ final class Updater {
     private var checking = false
     private var enabled = false
 
-    /// PLANETS_RELEASES_URL points a test at a release of its own, which may be a file.
     nonisolated private static let latestURL = URL(string: ProcessInfo.processInfo.environment["PLANETS_RELEASES_URL"]
         ?? "https://api.github.com/repos/vibeslop/Planets/releases/latest")!
 
-    /// Why this copy can't update itself, or nil when it can. Worked out once: none of it
-    /// changes while Planets runs.
     private static let obstacle: String? = {
         let bundle = Bundle.main.bundleURL
         guard bundle.pathExtension == "app", Lifecycle.canRelaunch else { return "it doesn't run from its bundle with its watcher" }
@@ -48,7 +35,6 @@ final class Updater {
             log.info("updates are off: \(obstacle, privacy: .public)")
             return
         }
-        // Not at launch: after a login the network may not be up yet.
         if ready == nil { scheduleCheck(after: 60) }
     }
 
@@ -80,8 +66,6 @@ final class Updater {
             log.info("Planets \(version.description, privacy: .public) is in place; restarting once you're away")
             ready = version
             onReady?()
-            // The default run loop mode only: a menu open runs another, and a restart waits
-            // until it closes.
             restTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.restartIfAway() }
             }
@@ -92,23 +76,17 @@ final class Updater {
     }
 
     private func restartIfAway() {
-        // Any key press, click or pointer movement.
         let anyInput = CGEventType(rawValue: ~0)!
         let rested = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput)
         guard rested >= 60, canRestart() else { return }
         restart()
     }
 
-    // MARK: Installing, off the main thread
-
     struct Failure: LocalizedError {
         let errorDescription: String?
         init(_ message: String) { errorDescription = message }
     }
 
-    /// Puts the newest release in place of the copy at `bundle` when it's newer than
-    /// `current`, and returns its version. Nothing beside the copy changes until the download
-    /// has passed every check, and a failed swap puts the old copy back.
     nonisolated private static func install(after current: Version, replacing bundle: URL) async throws -> Version? {
         var request = URLRequest(url: latestURL, timeoutInterval: 30)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -129,7 +107,6 @@ final class Updater {
             throw Failure("the download of Planets \(update.version) holds version \(found ?? "none")")
         }
 
-        // Beside the copy first, so the swap is two renames on one volume.
         let folder = bundle.deletingLastPathComponent()
         let staged = folder.appendingPathComponent(".Planets.app.new")
         let previous = folder.appendingPathComponent(".Planets.app.old")
@@ -149,14 +126,11 @@ final class Updater {
             try? FileManager.default.removeItem(at: staged)
             throw error
         }
-        // This process and its watcher keep running from the old files, which stay readable
-        // while open.
         try? FileManager.default.removeItem(at: previous)
         return update.version
     }
 
-    /// Checks that `app` is whole and meets this copy's designated requirement: the one macOS
-    /// ties the Accessibility permission to, so the update keeps it.
+    // SAFETY: Verifies nested code signature against the running binary's designated requirement before replacing the bundle.
     nonisolated private static func verify(_ app: URL) throws {
         var running: SecCode?
         var own: SecStaticCode?
@@ -175,7 +149,6 @@ final class Updater {
         }
     }
 
-    /// The name on the certificate that signed the bundle at `url`.
     nonisolated private static func signer(of url: URL) -> String? {
         var code: SecStaticCode?
         var info: CFDictionary?

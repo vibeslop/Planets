@@ -1,17 +1,10 @@
 import AppKit
 import ApplicationServices
 
-/// Looks for macOS settings that fight a tiling window manager and says what to do about
-/// each. It only reads settings and links to the right pane of System Settings; changing
-/// someone's system preferences behind their back would be worse than the conflict.
 struct SetupCheck: Identifiable, Equatable, Codable {
-    /// What each check means for Planets, worst first, shown by the icon beside it.
     enum Status: String, Equatable, Codable, Comparable {
-        /// Planets can't work without it.
         case needed
-        /// A macOS setting that fights tiling: windows jump, shrink or land in the wrong place.
         case recommended
-        /// Something extra.
         case optional
         case good
 
@@ -23,13 +16,9 @@ struct SetupCheck: Identifiable, Equatable, Codable {
     }
 
     var id: String
-    /// What to do, or for one that passes, what's so.
     var title: String
-    /// Why, in a line.
     var detail: String
     var status: Status
-    /// Where to fix it, a System Settings pane or an app, when there is one, and its name for
-    /// the button.
     var settingsURL: URL?
     var place: String?
 
@@ -114,9 +103,6 @@ struct SetupCheck: Identifiable, Equatable, Codable {
         return checks.sorted { $0.status < $1.status }
     }
 
-    /// Desktop Spaces per display, read from the Dock's Mission Control records. A full-screen
-    /// window's Space (type 4) is no extra desktop: counted, every full-screen app made the
-    /// menu ask to remove Spaces there was nothing to remove from.
     private static func spaceCounts() -> [Int] {
         guard let configuration = preference("SpacesDisplayConfiguration", "com.apple.spaces") as? [String: Any],
               let management = configuration["Management Data"] as? [String: Any],
@@ -124,7 +110,6 @@ struct SetupCheck: Identifiable, Equatable, Codable {
         return monitors.compactMap { ($0["Spaces"] as? [[String: Any]])?.filter { ($0["type"] as? Int ?? 0) == 0 }.count }
     }
 
-    /// The same list as plain text, for `planet doctor`.
     static func report() -> String {
         run().map { check in
             let mark = switch check.status {

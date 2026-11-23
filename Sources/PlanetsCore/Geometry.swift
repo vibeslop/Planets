@@ -1,21 +1,16 @@
 import CoreGraphics
 
-/// A window's CGWindowID. Stable for the window's lifetime, shared by the
-/// Accessibility API and the window server, so it is the one key every layer agrees on.
 public typealias WindowID = UInt32
 
-/// A display's CGDirectDisplayID.
 public typealias MonitorID = UInt32
 
 public enum Direction: String, CaseIterable, Sendable, Codable {
     case left, right, up, down
 
     public var axis: Axis { self == .left || self == .right ? .horizontal : .vertical }
-    /// True when moving in this direction increases the coordinate (right, down).
     public var isForward: Bool { self == .right || self == .down }
 }
 
-/// `horizontal` places children side by side; `vertical` stacks them.
 public enum Axis: String, Sendable, Codable {
     case horizontal, vertical
 
@@ -42,9 +37,6 @@ public struct Insets: Equatable, Sendable, Codable {
     public static let zero = Insets(all: 0)
 }
 
-// All geometry in PlanetsCore uses the global top-left coordinate space shared by the
-// Accessibility API and CGWindowList: the primary display's top-left corner is (0, 0)
-// and y grows downward. AppKit's bottom-left space is converted at the app boundary.
 extension CGRect {
     public func inset(by insets: Insets) -> CGRect {
         CGRect(
@@ -57,7 +49,6 @@ extension CGRect {
 
     public var center: CGPoint { CGPoint(x: midX, y: midY) }
 
-    /// Splits the rect along `axis`, giving `ratio` of the space (minus the gap) to the first part.
     public func split(_ axis: Axis, ratio: Double, gap: CGFloat) -> (CGRect, CGRect) {
         let ratio = CGFloat(ratio.clamped(to: 0.05...0.95))
         switch axis {
@@ -78,8 +69,6 @@ extension CGRect {
         }
     }
 
-    /// Rounds to whole points. Apps report frames in whole points, so comparing
-    /// unrounded layout output with what the app reports would never match.
     public var integralized: CGRect {
         CGRect(x: minX.rounded(), y: minY.rounded(), width: width.rounded(), height: height.rounded())
     }
@@ -98,10 +87,6 @@ extension Comparable {
     }
 }
 
-/// Picks the rect that sits next to `origin` in `direction`, the way a person would
-/// point: candidates must lie beyond the origin's edge. Rects that share a span with the
-/// origin on the cross axis beat ones that don't; then the nearest wins; then the one
-/// sharing the most span; then the top-most or left-most, so ties are deterministic.
 public func neighbor<ID>(
     of origin: CGRect,
     in direction: Direction,

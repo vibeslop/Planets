@@ -1,19 +1,13 @@
 import Foundation
 import PlanetsCore
 
-// `planet`: drives Planets from the shell. Every hotkey command works here too, so
-// window management can be scripted, bound in other tools, or tested.
-
 let arguments = Array(CommandLine.arguments.dropFirst())
 
-// Started by Planets itself, not a command for people: see Lifecycle in the app.
 if arguments.count == 2, arguments[0] == "_watch" {
     let started = ContinuousClock.now
     var byte: UInt8 = 0
     guard read(0, &byte, 1) == 1 else { exit(0) }
     let ranFor = ContinuousClock.now - started
-    // Planets is still going, in its crash handler or on its way out; it's gone, and its
-    // lock with it, once the pipe ends.
     var rest: UInt8 = 0
     while read(0, &rest, 1) > 0 {}
     let crashedEarly = byte == UInt8(ascii: "c") && ranFor < .seconds(15)
@@ -56,7 +50,6 @@ if arguments == ["config", "path"] {
 }
 
 if arguments.count >= 2, arguments[0] == "config", arguments[1] == "check" {
-    // Checks the file without the app, so a config can be validated before saving.
     let url = arguments.count > 2 ? URL(fileURLWithPath: arguments[2]) : IPC.configURL
     do {
         let (_, warnings) = try Config.parse(try String(contentsOf: url, encoding: .utf8))
@@ -68,8 +61,6 @@ if arguments.count >= 2, arguments[0] == "config", arguments[1] == "check" {
     }
 }
 
-// Commands are checked here first, so a typo fails with a useful message even when the
-// app isn't running.
 if !["config", "version", "doctor"].contains(arguments[0]) {
     do { _ = try Command.parse(arguments: arguments) } catch {
         fail("\(error)\nRun `planet help` for the list of commands.", code: 2)

@@ -4,9 +4,7 @@ import Foundation
 public struct Monitor: Equatable, Sendable {
     public let id: MonitorID
     public var name: String
-    /// The whole display, in the global top-left coordinate space.
     public var frame: CGRect
-    /// The display minus the menu bar and the Dock.
     public var visibleFrame: CGRect
     public var isMain: Bool
 
@@ -19,7 +17,6 @@ public struct Monitor: Equatable, Sendable {
     }
 }
 
-/// A window as discovered by the app layer, before Planets decides where it belongs.
 public struct WindowCandidate: Equatable, Sendable {
     public var id: WindowID
     public var pid: Int32
@@ -27,7 +24,6 @@ public struct WindowCandidate: Equatable, Sendable {
     public var appName: String
     public var title: String
     public var frame: CGRect
-    /// Dialogs, panels and fixed-size windows float instead of tiling.
     public var prefersFloating: Bool
 
     public init(id: WindowID, pid: Int32, bundleID: String?, appName: String, title: String, frame: CGRect, prefersFloating: Bool) {
@@ -49,48 +45,28 @@ public struct ManagedWindow: Equatable, Sendable {
     public var title: String
     public var workspace: String
     public var isFloating: Bool
-    /// The frame the app last reported.
     public var frame: CGRect
-    /// Where a floating window returns when its workspace is shown.
     public var floatingFrame: CGRect?
 }
 
-/// The whole window-manager state, as plain values. Every command and every event from
-/// macOS becomes a mutation here; the app layer then asks for `placements()` and moves
-/// only the windows whose spot changed. Keeping this free of side effects is what lets
-/// the tests drive the window manager without a screen.
 public struct World: Sendable {
     public internal(set) var monitors: [Monitor] = []
     public internal(set) var workspaces: [String: Workspace] = [:]
-    /// Configured workspaces. They exist even when empty and keep this order.
     public internal(set) var persistentNames: [String]
     public internal(set) var visible: [MonitorID: String] = [:]
     public internal(set) var windows: [WindowID: ManagedWindow] = [:]
     public internal(set) var focusedMonitor: MonitorID?
     public internal(set) var previousWorkspace: String?
-    /// The monitor the scratchpad is showing on, or nil while it's tucked away.
     public internal(set) var scratchpadMonitor: MonitorID?
-    /// The largest size each window will take, for apps that cap their window size. A
-    /// capped window sits centred in its tile instead of in the tile's top-left corner.
     public internal(set) var maxSizes: [WindowID: CGSize] = [:]
-    /// The smallest size each window accepts, learned when it refused a smaller tile.
-    /// Layouts make room for these.
     public internal(set) var minSizes: [WindowID: CGSize] = [:]
-    /// Windows floated only because their workspace had no room for them. They tile again
-    /// as soon as there is room; a window the user floated is left alone.
     public internal(set) var autoFloated: Set<WindowID> = []
-    /// When each window joined the tiles of its workspace, to tell newcomers from residents.
     var joined: [WindowID: Int] = [:]
     var joinCount = 0
     private var holdRetiling = false
     public var settings: LayoutSettings
-    /// Workspaces pinned to a display. Values name the display: "main", "secondary", its
-    /// position from the left ("1", "2"), or part of its name. A pin to a display that isn't
-    /// connected is ignored.
     public var pinnedMonitors: [String: String] = [:]
 
-    /// The scratchpad is a hidden workspace of floating windows that you summon over
-    /// whatever you're doing and dismiss again, like Hyprland's special workspace.
     public static let scratchpad = "scratchpad"
 
     public init(workspaceNames: [String], settings: LayoutSettings = LayoutSettings()) {
@@ -99,18 +75,13 @@ public struct World: Sendable {
         for name in persistentNames { workspaces[name] = Workspace(name: name) }
     }
 
-    // MARK: Queries
-
     public var focusedWorkspaceName: String? { focusedMonitor.flatMap { visible[$0] } }
     public var focusedWorkspace: Workspace? { focusedWorkspaceName.flatMap { workspaces[$0] } }
     public var focusedWindow: WindowID? {
-        // A shown scratchpad always has focus: focusing anything else tucks it away.
         if scratchpadMonitor != nil, let id = workspaces[Self.scratchpad]?.focused { return id }
         return focusedWorkspace?.focused
     }
 
-    /// Persistent workspaces first, in configured order, then any others by name. The
-    /// scratchpad isn't a place you go, so it's left out.
     public var workspaceOrder: [String] {
         let extra = workspaces.keys.filter { !persistentNames.contains($0) && $0 != Self.scratchpad }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         return persistentNames + extra
@@ -137,8 +108,6 @@ public struct World: Sendable {
     }
     public func workspace(of window: WindowID) -> String? { windows[window]?.workspace }
 
-    // MARK: Monitors
-
     public mutating func setMonitors(_ newMonitors: [Monitor]) {
         monitors = newMonitors.sorted { ($0.frame.minX, $0.frame.minY) < ($1.frame.minX, $1.frame.minY) }
         let ids = Set(monitors.map(\.id))
@@ -146,8 +115,6 @@ public struct World: Sendable {
         for monitor in monitors where visible[monitor.id] == nil {
             let shown = Set(visible.values)
             let free = workspaceOrder.filter { !shown.contains($0) }
-            // Pinned here first, then whatever was here last time, then the first workspace
-            // that isn't pinned to some other connected display.
             let pinned = free.first { pinnedMonitor(for: $0) == monitor.id }
             let remembered = free.first { workspaces[$0]?.lastMonitor == monitor.id && (pinnedMonitor(for: $0) ?? monitor.id) == monitor.id }
             let unpinned = free.first { pinnedMonitor(for: $0) == nil }
@@ -165,11 +132,6 @@ public struct World: Sendable {
         return "\(index)"
     }
 
-    // MARK: Windows
-
-    /// Adds a newly discovered window. Lands on `workspace` when a rule names one,
-    /// otherwise on the focused workspace, the one the user is looking at.
-    /// Where a tiled window sits right now, for `addWindow(_:workspace:floating:slot:)`.
     public func slot(of id: WindowID) -> TileSlot? {
         guard let window = windows[id], !window.isFloating, var slot = workspaces[window.workspace]?.slot(of: id, workspace: window.workspace) else { return nil }
         slot.joined = joined[id]
@@ -181,7 +143,6 @@ public struct World: Sendable {
         if let existing = windows[candidate.id] { return existing.workspace }
         let name = requested ?? focusedWorkspaceName ?? workspaceOrder[0]
         ensureWorkspace(name)
-        // The scratchpad only places floating windows; a tiled one there would never show.
         let isFloating = name == Self.scratchpad || (floating ?? candidate.prefersFloating)
         windows[candidate.id] = ManagedWindow(
             id: candidate.id, pid: candidate.pid, bundleID: candidate.bundleID, appName: candidate.appName,
@@ -205,9 +166,6 @@ public struct World: Sendable {
         joined[id] = joinCount
     }
 
-    /// Forgets a window. Returns the window that should take focus when the closed one
-    /// had it, so the app layer can hand focus over before macOS picks a window on some
-    /// hidden workspace and drags the user there.
     @discardableResult
     public mutating func removeWindow(_ id: WindowID) -> WindowID? {
         maxSizes[id] = nil
@@ -224,9 +182,6 @@ public struct World: Sendable {
         return successor
     }
 
-    /// A native tab took over from its sibling: macOS shows each tab as its own window, but
-    /// a tab group is one thing on screen, so the new tab inherits the old one's tile.
-    /// The old tab is forgotten until it's selected again, when the same swap runs back.
     public mutating func replaceWindow(_ old: WindowID, with candidate: WindowCandidate) {
         guard let window = windows[old], windows[candidate.id] == nil else { return }
         workspaces[window.workspace]?.replace(old, with: candidate.id)
@@ -246,7 +201,6 @@ public struct World: Sendable {
         windows[id]?.title = title
     }
 
-    /// Records a frame the app reported. Floating windows remember it as their home.
     public mutating func noteFrame(_ id: WindowID, _ frame: CGRect) {
         guard windows[id] != nil else { return }
         windows[id]!.frame = frame
@@ -258,16 +212,11 @@ public struct World: Sendable {
     public enum FocusOutcome: Equatable, Sendable {
         case unmanaged
         case unchanged
-        /// The window lived on a hidden workspace, so that workspace is now shown.
         case revealedWorkspace(String)
-        /// The window lives in the scratchpad, which is now shown.
         case revealedScratchpad
-        /// Focus left the scratchpad, which tucked itself away.
         case hidScratchpad
     }
 
-    /// macOS reports that a window took focus: from a click, Cmd-Tab, the Dock, or an app
-    /// opening a window. Focus wins, so a window on a hidden workspace pulls it into view.
     @discardableResult
     public mutating func noteFocus(_ id: WindowID) -> FocusOutcome {
         guard let window = windows[id] else { return .unmanaged }
@@ -297,8 +246,6 @@ public struct World: Sendable {
         return outcome
     }
 
-    // MARK: Workspaces
-
     mutating func ensureWorkspace(_ name: String) {
         if workspaces[name] == nil {
             workspaces[name] = Workspace(name: name)
@@ -313,7 +260,6 @@ public struct World: Sendable {
         if let replaced, replaced != name { pruneWorkspace(replaced) }
     }
 
-    /// Ad-hoc workspaces disappear once empty and out of view, like Hyprland's.
     private mutating func pruneWorkspace(_ name: String) {
         guard !persistentNames.contains(name), name != Self.scratchpad, let workspace = workspaces[name], workspace.isEmpty, !isVisible(name) else { return }
         workspaces[name] = nil
@@ -327,7 +273,6 @@ public struct World: Sendable {
         case .back:
             return previousWorkspace
         case .next, .previous:
-            // Cycle through persistent workspaces and any others that hold windows.
             let order = workspaceOrder.filter { persistentNames.contains($0) || !(workspaces[$0]?.isEmpty ?? true) }
             guard let current = focusedWorkspaceName, let index = order.firstIndex(of: current), !order.isEmpty else { return order.first }
             let step = target == .next ? 1 : -1
@@ -335,8 +280,6 @@ public struct World: Sendable {
         }
     }
 
-    /// Shows a workspace. When another monitor already shows it, focus moves to that
-    /// monitor instead of stealing the workspace, which is what i3 and AeroSpace do.
     @discardableResult
     public mutating func switchWorkspace(_ target: Command.WorkspaceTarget) -> Bool {
         guard let name = resolve(target), name != focusedWorkspaceName else { return false }
@@ -360,7 +303,6 @@ public struct World: Sendable {
         }
     }
 
-    /// Moves a window to another workspace. Returns the window that should hold focus next.
     @discardableResult
     public mutating func moveWindow(_ id: WindowID, to target: Command.WorkspaceTarget, follow: Bool) -> WindowID? {
         guard let window = windows[id], let name = resolve(target), name != window.workspace else { return nil }
@@ -389,10 +331,6 @@ public struct World: Sendable {
         return next
     }
 
-    // MARK: Scratchpad
-
-    /// Shows or tucks away the scratchpad on the focused monitor. Returns the window that
-    /// should take focus: the scratchpad's when it opens, the workspace's when it closes.
     public mutating func setScratchpad(_ toggle: Command.Toggle) -> WindowID? {
         let show = toggle == .toggle ? scratchpadMonitor == nil : toggle == .on
         if show {
@@ -405,7 +343,6 @@ public struct World: Sendable {
         return focusedWorkspace.flatMap { $0.focused ?? $0.tiled.first ?? $0.floating.first }
     }
 
-    /// Sends a window to the scratchpad, floating, and returns who should take focus next.
     public mutating func moveToScratchpad(_ id: WindowID) -> WindowID? {
         guard let window = windows[id], window.workspace != Self.scratchpad else { return nil }
         if !window.isFloating { setFloating(id, .on) }
@@ -415,9 +352,6 @@ public struct World: Sendable {
         return workspaces[source].flatMap { $0.focused ?? $0.tiled.first ?? $0.floating.first }
     }
 
-    // MARK: Focus and movement
-
-    /// Frames of every window on screen right now, for geometric navigation.
     func visibleTiledFrames() -> [(WindowID, CGRect)] {
         var result: [(WindowID, CGRect)] = []
         for (monitorID, name) in visible {
@@ -432,7 +366,6 @@ public struct World: Sendable {
 
     public enum NavigationResult: Equatable, Sendable {
         case window(WindowID)
-        /// Focus moved to a monitor whose workspace is empty.
         case emptyMonitor(MonitorID)
         case none
     }
@@ -488,8 +421,6 @@ public struct World: Sendable {
         return .emptyMonitor(destination.id)
     }
 
-    /// Swaps the focused window with its neighbour, or carries it to the next monitor
-    /// when it already sits at the edge. Floating windows nudge instead.
     public mutating func move(_ direction: Direction) -> NavigationResult {
         guard let name = focusedWorkspaceName, let workspace = workspaces[name], let current = workspace.focused else { return .none }
         if workspace.floating.contains(current) {
@@ -523,10 +454,6 @@ public struct World: Sendable {
         return .window(current)
     }
 
-    // MARK: Layout changes
-
-    /// Centres a floating window on the monitor showing its workspace, keeping its size but
-    /// never letting it exceed the usable area.
     public mutating func centerFloating(_ id: WindowID) {
         guard let window = windows[id], window.isFloating,
               let monitor = monitor(monitorShowing(window.workspace) ?? focusedMonitor) else { return }
@@ -541,15 +468,12 @@ public struct World: Sendable {
         guard let window = windows[id], var workspace = workspaces[window.workspace] else { return }
         let shouldFloat = toggle == .toggle ? !window.isFloating : toggle == .on
         guard shouldFloat != window.isFloating else { return }
-        // The scratchpad only places floating windows; a tiled one there would never show.
         guard shouldFloat || window.workspace != Self.scratchpad else { return }
-        // Floating or tiling by hand is the user's call, and outranks any automatic float.
         autoFloated.remove(id)
         workspace.remove(id)
         if shouldFloat {
             workspace.addFloating(id)
             if windows[id]!.floatingFrame == nil, let monitor = monitorShowing(window.workspace).flatMap(monitor(_:)) {
-                // A window leaving the grid gets a comfortable centred size, as in Hyprland.
                 let area = monitor.visibleFrame
                 let size = CGSize(width: (area.width * 0.6).rounded(), height: (area.height * 0.7).rounded())
                 windows[id]!.floatingFrame = CGRect(x: (area.midX - size.width / 2).rounded(), y: (area.midY - size.height / 2).rounded(), width: size.width, height: size.height)
@@ -564,16 +488,12 @@ public struct World: Sendable {
         if shouldFloat { retileWhereRoom(on: window.workspace) }
     }
 
-    // MARK: Minimum sizes
-
-    /// Records that a window refused a smaller size. Each side keeps the largest it has seen.
     public mutating func noteMinimumSize(_ id: WindowID, _ size: CGSize) {
         guard windows[id] != nil else { return }
         let known = minSizes[id] ?? .zero
         minSizes[id] = CGSize(width: max(known.width, size.width), height: max(known.height, size.height))
     }
 
-    /// Tiled windows on a workspace whose tile is still smaller than they accept.
     public func cramped(on name: String) -> [WindowID] {
         guard let workspace = workspaces[name], !workspace.tiled.isEmpty,
               let monitor = monitor(monitorShowing(name) ?? workspace.lastMonitor ?? focusedMonitor) ?? monitors.first else { return [] }
@@ -584,13 +504,6 @@ public struct World: Sendable {
         }
     }
 
-    /// When a workspace can't give every window the room it needs, the newest arrival
-    /// floats, centred, rather than one the user already arranged. Repeats until the rest
-    /// fit, then tiles again any of those that fit after all (a later float may have freed
-    /// their room). Returns the windows left floating.
-    ///
-    /// A window that couldn't fit even alone floats itself: moving others out wouldn't help.
-    /// None of this changes which window has focus.
     @discardableResult
     public mutating func makeRoom(on name: String) -> [WindowID] {
         var floated: [WindowID] = []
@@ -621,7 +534,6 @@ public struct World: Sendable {
         autoFloated.insert(id)
     }
 
-    /// The area a workspace's tiles fill, on the display showing it (or last showing it).
     func usableArea(ofWorkspace name: String) -> CGRect? {
         guard let workspace = workspaces[name],
               let monitor = monitor(monitorShowing(name) ?? workspace.lastMonitor ?? focusedMonitor) ?? monitors.first else { return nil }
@@ -629,7 +541,6 @@ public struct World: Sendable {
         return monitor.visibleFrame.inset(by: Insets(all: outer))
     }
 
-    /// Tiles windows that floated for lack of room again, oldest first, as long as they fit.
     mutating func retileWhereRoom(on name: String) {
         guard !holdRetiling, let candidates = workspaces[name]?.floating.filter({ autoFloated.contains($0) }), !candidates.isEmpty else { return }
         guard name != Self.scratchpad else { return }
@@ -664,8 +575,6 @@ public struct World: Sendable {
         workspaces[name]!.balance()
     }
 
-    /// Resizes a tiled window by moving the split next to it, or a floating window in place.
-    /// `edge` names the side being dragged when the user resizes with the mouse.
     public mutating func resize(_ id: WindowID, _ axis: Command.ResizeAxis, by delta: CGFloat, edge: Direction? = nil) {
         guard let window = windows[id], var workspace = workspaces[window.workspace] else { return }
         if window.isFloating {
@@ -680,9 +589,6 @@ public struct World: Sendable {
         workspaces[window.workspace] = workspace
     }
 
-    /// The window was dragged by its title bar and dropped. Dropping it onto another tiled
-    /// window swaps the two; dropping it on another monitor moves it there.
-    /// Two tiled windows on the same workspace trade places.
     public mutating func swapWindows(_ a: WindowID, _ b: WindowID) {
         guard a != b, let first = windows[a], let second = windows[b], first.workspace == second.workspace,
               !first.isFloating, !second.isFloating else { return }
@@ -706,15 +612,12 @@ public struct World: Sendable {
         }
     }
 
-    // MARK: Placement
-
     public func usableArea(for workspace: String) -> CGRect? {
         guard let monitor = monitorShowing(workspace).flatMap(monitor(_:)) else { return nil }
         let outer = (workspaces[workspace]?.tiled.count == 1 && settings.smartGaps) ? 0 : settings.outerGap
         return monitor.visibleFrame.inset(by: Insets(all: outer)).integralized
     }
 
-    /// Where every managed window should be right now.
     public mutating func placements() -> [WindowID: Placement] {
         var result: [WindowID: Placement] = [:]
         for (id, window) in windows where !isVisible(window.workspace) {
@@ -743,21 +646,16 @@ public struct World: Sendable {
         return result
     }
 
-    /// Records the largest size a window will take. Nil forgets it, for a window that has
-    /// shown it can grow after all.
     public mutating func limitSize(_ id: WindowID, to size: CGSize?) {
         guard windows[id] != nil || size == nil else { return }
         maxSizes[id] = size
     }
 
-    /// A tile shrunk to a size cap, centred where the full tile was.
     public static func fit(_ rect: CGRect, within limit: CGSize) -> CGRect {
         let width = min(rect.width, limit.width), height = min(rect.height, limit.height)
         return CGRect(x: (rect.midX - width / 2).rounded(), y: (rect.midY - height / 2).rounded(), width: width, height: height)
     }
 
-    /// Keeps a floating frame on the given monitor: frames already there stay put, others
-    /// move over keeping their position relative to the monitor they came from.
     static func translate(_ frame: CGRect, into monitor: Monitor) -> CGRect {
         if monitor.frame.contains(frame.center) { return frame }
         let area = monitor.visibleFrame
@@ -766,10 +664,6 @@ public struct World: Sendable {
         return CGRect(x: (area.midX - width / 2).rounded(), y: (area.midY - height / 2).rounded(), width: width, height: height)
     }
 
-    /// Where to park a window of a hidden workspace. macOS won't let a window leave the
-    /// screen entirely, so it goes to a bottom corner with one pixel left on screen, on the
-    /// side where it can't spill onto a neighbouring display. The bottom edge of the full
-    /// display (not the visible area) tucks that pixel behind the Dock when it's there.
     public func parkingOrigin(for size: CGSize, on monitorID: MonitorID?) -> CGPoint {
         guard let monitor = monitor(monitorID) ?? monitors.first(where: \.isMain) ?? monitors.first else { return .zero }
         let frame = monitor.frame

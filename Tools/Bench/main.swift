@@ -2,21 +2,6 @@ import AppKit
 import CoreMedia
 import ScreenCaptureKit
 
-// Measures what a person sees: the time from a key press to the screen changing.
-//
-// Internal timers only cover the part of the work Planets does itself. The part that
-// matters is from the key going down to new pixels on the display, which also includes the
-// other app, the window server and the next display refresh. This presses the real key
-// through the HID event stream, records the screen with ScreenCaptureKit, and finds the
-// first frame that differs from the one before the press (first response) and the last
-// frame that changed before the screen went still (settled).
-//
-// Usage: bench <input> [--region x,y,w,h] [--trials N] [--gap seconds] [--label text]
-//   input: modifiers and a key joined by "+", e.g. "cmd+grave", "alt+2", "down"; several
-//          separated by "|" are pressed in turn, e.g. "down|up". "click:x,y" clicks a point
-//          (global top-left points); "click:x,y;x,y" clicks each in turn.
-//   region: global top-left points to watch; defaults to the main display.
-
 struct Options {
     var chord = "cmd+grave"
     var region: CGRect?
@@ -76,7 +61,7 @@ func ms(_ from: UInt64, _ to: UInt64) -> Double {
     Double(Int64(to) - Int64(from)) * Double(timebase.numer) / Double(timebase.denom) / 1e6
 }
 
-/// Frames as they arrive: when each was displayed, and whether it differed from the last.
+// SAFETY: Mutable state is guarded by lock.
 final class Recorder: NSObject, SCStreamOutput, @unchecked Sendable {
     private let lock = NSLock()
     private var previous: [UInt8] = []
@@ -95,7 +80,6 @@ final class Recorder: NSObject, SCStreamOutput, @unchecked Sendable {
         let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
         let stride = CVPixelBufferGetBytesPerRow(pixels)
         guard let base = CVPixelBufferGetBaseAddress(pixels)?.assumingMemoryBound(to: UInt8.self) else { return }
-        // Every other pixel on every other row is plenty to see a title bar or a rim change.
         var sample = [UInt8]()
         sample.reserveCapacity(width * height)
         for y in Swift.stride(from: 0, to: height, by: 2) {
@@ -141,7 +125,6 @@ func run() async throws {
     let region = options.region ?? CGRect(x: 0, y: 0, width: display.width, height: display.height)
     let config = SCStreamConfiguration()
     config.sourceRect = region
-    // Half the points is enough to see the change and keeps each frame cheap to compare.
     config.width = max(64, Int(region.width / 2))
     config.height = max(64, Int(region.height / 2))
     config.minimumFrameInterval = CMTime(value: 1, timescale: 120)
@@ -180,7 +163,6 @@ func run() async throws {
         case .click(let point):
             CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
             try await Task.sleep(for: .milliseconds(60))
-            // Timed from the button coming up: that's when a click takes effect.
             CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
             try await Task.sleep(for: .milliseconds(30))
             start = mach_absolute_time()
@@ -189,7 +171,6 @@ func run() async throws {
         try await Task.sleep(for: .seconds(options.gap))
         let changes = recorder.changes(after: start)
         guard let firstChange = changes.first else { missed += 1; continue }
-        // Settled: the last change in a run of changes no more than 150 ms apart.
         var last = firstChange
         for change in changes.dropFirst() where ms(last, change) < 150 { last = change }
         first.append(ms(start, firstChange))

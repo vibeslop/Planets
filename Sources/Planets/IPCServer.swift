@@ -1,8 +1,7 @@
 import Foundation
 import PlanetsCore
 
-/// Serves the `planet` CLI over a Unix socket. Connections are read off the main thread;
-/// only the command itself runs on the main thread, where the window manager lives.
+// SAFETY: Socket and DispatchSource state are confined to start/stop and the serial IPC queue.
 final class IPCServer: @unchecked Sendable {
     typealias Handler = @MainActor ([String]) -> IPCResponse
 
@@ -37,7 +36,7 @@ final class IPCServer: @unchecked Sendable {
             close(fd)
             throw error
         }
-        // Only this user may talk to the window manager.
+        // SAFETY: Restrict IPC socket access to the current user.
         chmod(path, 0o600)
         listenSocket = fd
         let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)

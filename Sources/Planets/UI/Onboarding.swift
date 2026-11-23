@@ -1,12 +1,6 @@
 import AppKit
 import PlanetsCore
 
-/// First launch: one step (Accessibility access), then the keys that matter. The window
-/// watches the permission itself, so granting it in System Settings moves things along
-/// without a restart or an extra click.
-///
-/// Plain AppKit on purpose: SwiftUI keeps its caches for the life of the process, and this
-/// process is the window manager, which runs all day for a window shown once.
 @MainActor
 final class OnboardingWindowController: NSObject, NSWindowDelegate {
     private unowned let controller: AppController
@@ -32,9 +26,6 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 
     func permissionGranted() {
         render(granted: true)
-        // Access is given in System Settings, which is in front then. Asking to be activated
-        // is only a request, and macOS turns it down for an app in the background: the next
-        // step stayed hidden behind Settings. Ordering the window front doesn't ask.
         window?.orderFrontRegardless()
         NSApp.activate()
         window?.makeKey()
@@ -106,7 +97,6 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         grid.rowSpacing = 9
         grid.column(at: 1).xPlacement = .trailing
         var views: [NSView] = [grid]
-        // Settings that fight tiling, each with where to change it. Planets never changes them.
         for check in SetupCheck.run() where check.status == .recommended {
             let text = label("\(check.title). \(check.detail)", size: 11.5, color: .secondaryLabelColor, wraps: true)
             views.append(text)

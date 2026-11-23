@@ -113,7 +113,6 @@ import Testing
         #expect(throws: ConfigError.self) { try Config.parse("[general]\nmod = \"banana\"") }
         #expect(throws: ConfigError.self) { try Config.parse("[keys]\n\"mod+h\" = \"fly away\"") }
         #expect(throws: ConfigError.self) { try Config.parse("[keys]\n\"mod+banana\" = \"balance\"") }
-        // The scratchpad's workspace is hidden; one named so would vanish with it.
         #expect(throws: ConfigError.self) { try Config.parse("[workspaces]\nnames = [\"1\", \"scratchpad\"]") }
     }
 
@@ -191,7 +190,6 @@ import Testing
         #expect(focus?.chords == ["⌃⌥ H J K L", "⌃⌥ ← ↓ ↑ →"])
     }
 
-    /// ⌥0 for workspace 10 puts 0 after 9; that list isn't a run, and once crashed the menu.
     @Test func numbersOutOfOrderStayListed() throws {
         let (config, _) = try Config.parse("""
             [keys]
@@ -204,8 +202,6 @@ import Testing
     }
 }
 
-/// Numbers a config can hold but Swift can't turn into what Planets needs once crashed it,
-/// at launch, in `planet config check`, or when the menu opened.
 @Suite struct OutOfRangeTests {
     @Test func aNumberTooLargeToStoreIsAnError() {
         #expect(throws: TOMLError.self) { try TOML.parse("gaps = 1e400") }
@@ -269,7 +265,6 @@ import Testing
         #expect(release.update(after: Version("0.3.0")!) == nil)
     }
 
-    /// The workflow creates the release before it attaches the archive.
     @Test func aReleaseWithoutItsArchiveIsNot() throws {
         let release = try JSONDecoder().decode(Release.self, from: Data(#"{"tag_name": "v9.0.0", "assets": []}"#.utf8))
         #expect(release.update(after: Version("0.1.0")!) == nil)

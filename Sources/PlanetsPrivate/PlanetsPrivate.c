@@ -21,6 +21,7 @@ static CopySpacesForWindowsFn copySpacesForWindows;
 static CopyDisplaySpacesFn copyDisplaySpaces;
 static GetActiveSpaceFn getActiveSpace;
 
+// SAFETY: SkyLight symbols are loaded via dlsym and null-checked before every call.
 static void load(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -45,7 +46,6 @@ static bool psn_for_pid(pid_t pid, ProcessSerialNumber *psn) {
 #pragma clang diagnostic pop
 
 static bool front_window(ProcessSerialNumber *psn, CGWindowID windowID) {
-    // 0x200 is kCPSUserGenerated: the switch counts as user-initiated, so macOS honours it.
     return setFrontProcess && setFrontProcess(psn, windowID, 0x200) == kCGErrorSuccess;
 }
 
@@ -59,8 +59,6 @@ bool planets_focus_window(pid_t pid, CGWindowID windowID) {
     load();
     ProcessSerialNumber psn;
     if (!postEventRecord || !psn_for_pid(pid, &psn) || !front_window(&psn, windowID)) return false;
-    // Two synthetic window-server events make the window key, the same pair a click sends.
-    // Layout taken from yabai, which has used it since macOS 10.13.
     uint8_t bytes[0xf8];
     memset(bytes, 0, sizeof(bytes));
     bytes[0x04] = 0xf8;
@@ -79,7 +77,6 @@ bool planets_activate_process(pid_t pid) {
     if (!setFrontProcess) return false;
     ProcessSerialNumber psn;
     if (!psn_for_pid(pid, &psn)) return false;
-    // 0x400 is kCPSNoWindows: bring the process forward without raising any window.
     return setFrontProcess(&psn, 0, 0x400) == kCGErrorSuccess;
 }
 
@@ -121,7 +118,6 @@ uint64_t planets_window_space(CGWindowID windowID) {
     CFNumberRef number = CFNumberCreate(NULL, kCFNumberSInt32Type, &windowID);
     CFArrayRef ids = CFArrayCreate(NULL, (const void **)&number, 1, &kCFTypeArrayCallBacks);
     CFRelease(number);
-    // 7: every kind of Space the window can be on.
     CFArrayRef spaces = copySpacesForWindows(mainConnection(), 7, ids);
     CFRelease(ids);
     uint64_t space = 0;
@@ -161,7 +157,6 @@ int planets_display_spaces(uint64_t space, uint64_t *ids, bool *fullScreen, int 
             CFNumberRef number = CFDictionaryGetValue(entry, CFSTR("type"));
             if (number) CFNumberGetValue(number, kCFNumberIntType, &type);
             ids[count] = space_id(entry);
-            // Type 4 is a full-screen Space; 0 a desktop.
             fullScreen[count] = type == 4;
             count++;
         }

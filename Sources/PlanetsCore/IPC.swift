@@ -1,7 +1,5 @@
 import Foundation
 
-/// The wire format between the `planet` CLI and the app: one JSON object per connection
-/// each way, over a Unix socket only the current user can open.
 public struct IPCRequest: Codable, Sendable {
     public var args: [String]
     public init(args: [String]) { self.args = args }
@@ -17,15 +15,11 @@ public struct IPCResponse: Codable, Sendable {
 }
 
 public enum IPC {
-    /// The socket lives with the app's other files. Its path stays well under the
-    /// 104-byte limit macOS puts on Unix socket paths.
     public static var socketPath: String {
         if let override = ProcessInfo.processInfo.environment["PLANETS_SOCKET"] { return override }
         return supportDirectory.appendingPathComponent("planets.sock").path
     }
 
-    /// Sends one request to a socket and reads the one response, or nil when nobody's there.
-    /// With a timeout, a process that's alive but stuck can't hold the caller past it.
     public static func request(_ args: [String], socket path: String = socketPath, timeout: Int? = nil) -> IPCResponse? {
         let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }

@@ -1,7 +1,6 @@
 import Foundation
 
 extension Command {
-    /// A sentence-case description for menus and the shortcuts list.
     public var title: String {
         func workspace(_ target: WorkspaceTarget) -> String {
             switch target {
@@ -57,12 +56,9 @@ extension Command {
     }
 }
 
-/// A line in the shortcuts list. Families of bindings that differ only by direction or
-/// number collapse into one line, so nine workspace keys read as "⌥ 1–9".
 public struct ShortcutRow: Equatable, Sendable, Identifiable {
     public var title: String
     public var category: String
-    /// Each entry is a modifier group followed by its keys, like "⌥ H J K L".
     public var chords: [String]
     public var id: String { category + title }
 }
@@ -98,7 +94,6 @@ public enum ShortcutSummary {
         return rows.sorted { (categoryOrder.firstIndex(of: $0.category) ?? 99) < (categoryOrder.firstIndex(of: $1.category) ?? 99) }
     }
 
-    /// Groups commands that belong on one line, with a rank that orders their keys.
     static func family(of command: Command) -> (key: String, title: String, rank: Int) {
         let directionRank: [Direction: Int] = [.left: 0, .down: 1, .up: 2, .right: 3]
         switch command {
@@ -113,14 +108,12 @@ public enum ShortcutSummary {
         }
     }
 
-    /// Letters and arrows read best as separate groups: "H J K L" and "← ↓ ↑ →".
     static func split(_ keys: [String]) -> [[String]] {
         let arrows = keys.filter { ["←", "↓", "↑", "→"].contains($0) }
         let rest = keys.filter { !arrows.contains($0) }
         return [rest, arrows].filter { !$0.isEmpty }
     }
 
-    /// Runs of consecutive digits become ranges: 1 2 3 … 9 is "1–9".
     static func compact(_ keys: [String]) -> String {
         let numbers = keys.compactMap(Int.init)
         let consecutive = zip(numbers, numbers.dropFirst()).allSatisfy { $0 < Int.max && $1 == $0 + 1 }

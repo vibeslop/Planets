@@ -3,14 +3,6 @@ import QuartzCore
 import PlanetsCore
 import PlanetsPrivate
 
-/// The rim around the focused window: a thin line of light just outside its edge, with a
-/// soft haze around it, in the colour picked in Settings (gold unless changed).
-///
-/// Each monitor gets one transparent, click-through panel ordered directly below the
-/// focused window, so the window covers the inner half of the sheen and only the light in
-/// the gaps shows. The rim follows the measured window corner radius so the gap stays even
-/// at the corners. It never animates between windows: focus mostly moves by keyboard,
-/// hundreds of times a day, and light that arrives late makes the whole app feel slow.
 @MainActor
 final class FocusGlowController {
     private var panels: [MonitorID: GlowPanel] = [:]
@@ -34,33 +26,27 @@ final class FocusGlowController {
         }
         if !enabled { hideAll() }
         if colorObserver == nil {
-            // The accent colour can change in System Settings while Planets runs.
             colorObserver = NotificationCenter.default.addObserver(forName: NSColor.systemColorsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, self.color == .accent else { return }
                     for panel in self.panels.values { panel.paint(.accent) }
                 }
             }
-            // Neutral light follows light and dark mode.
             themeObserver = DistributedNotificationCenter.default().addObserver(forName: .init("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, self.color == .neutral else { return }
-                    // The app's appearance updates just after the notification.
                     DispatchQueue.main.async { for panel in self.panels.values { panel.paint(.neutral) } }
                 }
             }
         }
     }
 
-    /// `restack` re-orders the glow under the window, needed whenever focus changes: the
-    /// focused window has just been raised, and the glow must follow it up the stack.
     func update(target: (id: WindowID, frame: CGRect)?, monitors: [Monitor], restack: Bool = false) {
         trace("glow update target=\(String(describing: target)) restack=\(restack)")
         guard enabled, let target, let monitor = monitors.first(where: { $0.frame.contains(target.frame.center) }) else {
             hideAll()
             return
         }
-        // Drop panels for monitors that went away.
         for id in panels.keys where !monitors.contains(where: { $0.id == id }) {
             panels.removeValue(forKey: id)?.orderOut(nil)
         }
@@ -76,9 +62,6 @@ final class FocusGlowController {
         if switchingWindow || restack || !panel.isVisible { self.restack(target.id, monitor: monitor.id) }
     }
 
-    /// Orders the glow under the window now, and again a moment later: the app raises its
-    /// window on its own thread, and a raise that lands after the first ordering would leave
-    /// the glow behind.
     private func restack(_ id: WindowID, monitor: MonitorID) {
         panels[monitor]?.orderBelow(id)
         restackWork?.cancel()
@@ -112,7 +95,6 @@ final class FocusGlowController {
 }
 
 final class GlowPanel: NSPanel {
-    /// Everything moves together inside this layer, sized to the window plus the bloom.
     private let container = CALayer()
     private let rim = CALayer()
     private let rimMask = CAShapeLayer()
@@ -125,19 +107,12 @@ final class GlowPanel: NSPanel {
     private var spread: CGFloat = 26
     private var intensity: Double = 0.7
     private var visibleGlow = false
-    /// The size the rim and bloom paths were last built for.
     private var shapedSize: CGSize = .zero
 
-    /// Window corner radius, measured from window captures on macOS 27: windows with and
-    /// without toolbars all come out at about 17 pt. The rim sits just outside the window
-    /// edge, so its own corners are this plus the offset, which keeps the gap even all round.
     static let windowCornerRadius: CGFloat = 17
-    /// How far outside the window edge the rim's centre line runs.
     static let rimOffset: CGFloat = 1.75
 
     init() {
-        // Not deferred: the panel needs its window number before it is first shown, to be
-        // ordered relative to another app's window.
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
@@ -147,7 +122,6 @@ final class GlowPanel: NSPanel {
         hidesOnDeactivate = false
         animationBehavior = .none
         level = .normal
-        // Transient: Mission Control hides it instead of showing a stray glowing rectangle.
         collectionBehavior = [.moveToActiveSpace, .ignoresCycle, .transient, .fullScreenNone]
         let view = NSView()
         view.wantsLayer = true
@@ -158,7 +132,6 @@ final class GlowPanel: NSPanel {
         for light in [rimLight, bloomLight] {
             light.type = .conic
             light.startPoint = CGPoint(x: 0.5, y: 0.5)
-            // In this y-up layer, pointing the end at the top-left corner starts the light there.
             light.endPoint = CGPoint(x: 0, y: 1)
         }
         paint(.gold)
@@ -169,8 +142,6 @@ final class GlowPanel: NSPanel {
         rim.mask = rimMask
         rim.addSublayer(rimLight)
 
-        // The bloom's mask is nothing but a blurred shadow of the rim, so the light shows
-        // through softly on both sides of it; the window covers the inner side.
         bloomMask.shadowColor = NSColor.black.cgColor
         bloomMask.shadowOpacity = 1
         bloomMask.shadowOffset = .zero
@@ -186,8 +157,6 @@ final class GlowPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Core Animation walks conic gradients counter-clockwise, SwiftUI clockwise; the
-    /// mirrored stops make the haze drift across the top here as it does in the app.
     func paint(_ color: GlowColor) {
         let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let palette = Theme.palette(color, dark: dark)
@@ -203,12 +172,9 @@ final class GlowPanel: NSPanel {
 
     func style(intensity: Double, gap: CGFloat) {
         self.intensity = intensity
-        // The bloom reaches about as far as the gap between windows: it lights the gutter
-        // without washing over the neighbours.
         bloomRadius = max(4, min(14, gap * 0.7 + 3))
         spread = bloomRadius * 2.6 + Self.rimOffset
         bloomMask.shadowRadius = bloomRadius
-        // Vapor stays faint: it should be felt at the edge of vision, not looked at.
         bloom.opacity = Float(0.3 + 0.55 * intensity)
         rim.opacity = Float(0.5 + 0.4 * intensity)
         shapedSize = .zero
@@ -219,10 +185,7 @@ final class GlowPanel: NSPanel {
         setFrame(Displays.toAppKit(frame), display: false)
     }
 
-    /// Positions the glow around a window, in global top-left coordinates. It snaps there:
-    /// the only motion is a short fade when the glow first appears.
     func show(windowFrame: CGRect, monitorFrame: CGRect) {
-        // The view isn't flipped: convert to its bottom-left space relative to the panel.
         let local = CGRect(
             x: windowFrame.minX - monitorFrame.minX,
             y: monitorFrame.maxY - windowFrame.maxY,
@@ -230,8 +193,6 @@ final class GlowPanel: NSPanel {
             height: windowFrame.height
         )
         let outer = local.insetBy(dx: -spread, dy: -spread)
-        // A window being dragged keeps its size, and then only the container moves: no new
-        // paths, no restroked bloom, one layer position per pointer event.
         if outer.size == shapedSize {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -246,7 +207,6 @@ final class GlowPanel: NSPanel {
         let radius = Self.windowCornerRadius + Self.rimOffset
         let rimPath = CGPath(roundedRect: rimRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
         let bloomPath = rimPath.copy(strokingWithWidth: 7, lineCap: .round, lineJoin: .round, miterLimit: 1)
-        // The light layers are squares centred on the rim, so the conic sheen spreads evenly.
         let side = hypot(outer.width, outer.height)
         let lightFrame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
 

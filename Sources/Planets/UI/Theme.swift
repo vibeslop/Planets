@@ -1,25 +1,16 @@
 import AppKit
 import PlanetsCore
 
-/// Colour lives in two places only: the app icon and the light around the focused window.
-/// Everything else, from the menu to the menu bar strip, uses the system's own colours and
-/// the user's accent, so the app looks like part of the Mac rather than painted over it.
 enum Theme {
-    // Display P3.
     static let gold = NSColor(displayP3Red: 1.0, green: 0.80, blue: 0.20, alpha: 1)
-    /// The bright core of the light.
     static let goldLight = NSColor(displayP3Red: 1.0, green: 0.92, blue: 0.62, alpha: 1)
     static let amber = NSColor(displayP3Red: 0.98, green: 0.58, blue: 0.14, alpha: 1)
     static let pearl = NSColor(displayP3Red: 0.99, green: 0.98, blue: 0.96, alpha: 1)
 
-    /// The rim, clockwise from the top-left corner: gold light, brightest at the top.
     static let rimStops: [(color: NSColor, location: CGFloat)] = [
         (goldLight, 0.00), (gold, 0.30), (goldLight, 0.55), (gold, 0.80), (goldLight, 1.00),
     ]
 
-    /// The haze around the rim: one connected cloud of gold warming into amber and back,
-    /// densest at the top left, thinning toward the bottom left. A touch stronger than it
-    /// would be on open space, since the gap around a window is narrow and usually dark.
     static let bloomStops: [(color: NSColor, location: CGFloat)] = [
         (gold.withAlphaComponent(0.99), 0.00),
         (amber.withAlphaComponent(0.77), 0.18),
@@ -30,10 +21,6 @@ enum Theme {
         (gold.withAlphaComponent(0.99), 1.00),
     ]
 
-    /// The rim and haze stops for the focused window in each colour the user can pick.
-    /// Every palette keeps gold's shape: a bright core that brightens at the top, and a
-    /// haze densest at the top left that thins toward the bottom left.
-    /// `dark` is whether the Mac is in dark mode, which only the neutral colour depends on.
     static func palette(_ color: GlowColor, dark: Bool = true) -> (rim: [(color: NSColor, location: CGFloat)], bloom: [(color: NSColor, location: CGFloat)]) {
         func shaped(core: NSColor, light: NSColor, deep: NSColor) -> (rim: [(color: NSColor, location: CGFloat)], bloom: [(color: NSColor, location: CGFloat)]) {
             let rim: [(color: NSColor, location: CGFloat)] = [(light, 0), (core, 0.30), (light, 0.55), (core, 0.80), (light, 1)]
