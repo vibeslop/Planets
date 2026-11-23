@@ -35,15 +35,12 @@ public struct TOMLError: Error, Equatable, CustomStringConvertible, Sendable {
     public var description: String { "line \(line): \(message)" }
 }
 
-/// A parser for the part of TOML a config file needs: tables, arrays of tables, dotted
-/// keys, strings, numbers, booleans, arrays and inline tables. Dates are left out.
 public enum TOML {
     public static func parse(_ text: String) throws -> [String: TOMLValue] {
         var parser = Parser(Array(text.unicodeScalars))
         return try parser.document()
     }
 
-    /// Formats a value the way the parser reads it back.
     public static func format(_ value: TOMLValue) -> String {
         switch value {
         case .string(let s): return quote(s)
@@ -104,7 +101,6 @@ public enum TOML {
             while let c = peek, c == " " || c == "\t" { advance() }
         }
 
-        /// Skips spaces, newlines and comments.
         mutating func skipTrivia() {
             while let c = peek {
                 if c == " " || c == "\t" || c == "\n" || c == "\r" {
@@ -220,7 +216,7 @@ public enum TOML {
         }
 
         mutating func basicString() throws -> String {
-            advance() // opening quote
+            advance()
             var out = ""
             while true {
                 guard let c = peek else { throw error("unterminated string") }
@@ -241,7 +237,6 @@ public enum TOML {
                 advance()
                 if c == "\\" {
                     if let next = peek, next == "\n" || next == " " || next == "\t" {
-                        // A backslash at line end trims the newline and leading whitespace.
                         while let d = peek, d == "\n" || d == " " || d == "\t" || d == "\r" { advance() }
                     } else {
                         out.unicodeScalars.append(try escape())
@@ -337,15 +332,11 @@ public enum TOML {
             }
             if let int = Int(text) { return .integer(int) }
             if let double = Double(text), !text.isEmpty {
-                // Double reads a number too large to store as infinity, which nothing in a
-                // config means and which crashes whatever turns it into an Int.
                 guard double.isFinite else { throw error("'\(text)' is too large") }
                 return .float(double)
             }
             throw error(text.isEmpty ? "expected a value" : "'\(text)' is not a number")
         }
-
-        // MARK: Building the tree
 
         func insert(_ value: TOMLValue, at tablePath: [String], key: [String], in root: inout [String: TOMLValue]) throws {
             let full = tablePath + key
@@ -368,8 +359,6 @@ public enum TOML {
             }
         }
 
-        /// Walks to the table at `path`, descending into the last element of arrays of
-        /// tables, which is where `[[x]]` followed by keys puts them.
         func mutateTable(at path: [String], in table: inout [String: TOMLValue], createMissing: Bool, _ body: (inout [String: TOMLValue]) throws -> Void) throws {
             guard let head = path.first else { try body(&table); return }
             let rest = Array(path.dropFirst())
@@ -393,8 +382,6 @@ public enum TOML {
     }
 }
 
-/// Edits single values in a TOML file while leaving comments and layout alone, so the
-/// app and a hand-edited file can live together.
 public enum TOMLEditor {
     public static func setting(_ value: TOMLValue, table: String, key: String, in text: String) -> String {
         var lines = text.components(separatedBy: "\n")
@@ -415,14 +402,12 @@ public enum TOMLEditor {
             guard !trimmed.hasPrefix("#"), let eq = trimmed.firstIndex(of: "=") else { continue }
             let lineKey = trimmed[..<eq].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
             if lineKey == key {
-                // Keep a trailing comment on the line if there is one.
                 let comment = trailingComment(of: lines[index])
                 let indent = String(lines[index].prefix { $0 == " " || $0 == "\t" })
                 lines[index] = indent + rendered + (comment.map { "  " + $0 } ?? "")
                 return lines.joined(separator: "\n")
             }
         }
-        // Insert after the last non-blank line of the table so blank separators stay put.
         var insertAt = end
         while insertAt > headerIndex + 1, lines[insertAt - 1].trimmingCharacters(in: .whitespaces).isEmpty { insertAt -= 1 }
         lines.insert(rendered, at: insertAt)

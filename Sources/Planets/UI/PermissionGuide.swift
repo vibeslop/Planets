@@ -1,11 +1,5 @@
 import AppKit
 
-/// Opens System Settings at Accessibility and holds Planets beside it, ready to drag into the
-/// list. Dropping an app there adds it switched on, so the whole setup is one drag; finding
-/// the app in the list and flipping its switch was the step people got lost on.
-///
-/// The panel sits under the Settings window and follows it while it moves, and goes away by
-/// itself once access is on, however it was given.
 @MainActor
 final class PermissionGuide {
     private var panel: NSPanel?
@@ -15,8 +9,6 @@ final class PermissionGuide {
         if let url = SetupCheck.privacyAccessibility { NSWorkspace.shared.open(url) }
         if panel == nil { panel = Self.makePanel() }
         follow?.invalidate()
-        // Window positions aren't announced for other apps' windows; five looks a second
-        // keep the panel attached to a window being dragged around, for no measurable cost.
         follow = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.update() }
         }
@@ -40,14 +32,11 @@ final class PermissionGuide {
         panel.orderFrontRegardless()
     }
 
-    /// Below the Settings window, centred on its right-hand pane where the list is. Without
-    /// room below, to its right, then to its left, then over its lower right corner.
     private static func origin(for size: CGSize, beside settings: CGRect) -> NSPoint {
         let center = CGPoint(x: settings.midX, y: settings.midY)
         let screen = NSScreen.screens.first { Displays.toGlobal($0.frame).contains(center) } ?? NSScreen.main
         let area = screen.map { Displays.toGlobal($0.visibleFrame) } ?? settings
         let gap: CGFloat = 12
-        // System Settings' sidebar is about 215 points wide; the list is to its right.
         let listMidX = settings.minX + 215 + (settings.width - 215) / 2
         var topLeft: CGPoint
         if settings.maxY + gap + size.height <= area.maxY {
@@ -60,12 +49,9 @@ final class PermissionGuide {
             topLeft = CGPoint(x: settings.maxX - size.width - 20, y: settings.maxY - size.height - 20)
         }
         topLeft.x = min(max(topLeft.x, area.minX + 8), area.maxX - size.width - 8)
-        // AppKit places windows by their bottom-left corner, from the bottom of the main display.
         return Displays.toAppKit(CGPoint(x: topLeft.x, y: topLeft.y + size.height))
     }
 
-    /// The System Settings window on screen, in top-left screen coordinates. A window's bounds
-    /// need no permission to read, unlike its title.
     private static func settingsWindow() -> CGRect? {
         guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.systempreferences").first?.processIdentifier,
               let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
@@ -112,7 +98,6 @@ final class PermissionGuide {
     }
 }
 
-/// The app's icon, which drags as the app itself: what System Settings' lists take.
 private final class DraggableApp: NSView, NSDraggingSource {
     private let image = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
 
@@ -124,7 +109,6 @@ private final class DraggableApp: NSView, NSDraggingSource {
         addCursorRect(bounds, cursor: .openHand)
     }
 
-    // The panel never becomes key, so the first click has to count.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {}

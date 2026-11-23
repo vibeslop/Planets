@@ -1,7 +1,6 @@
 import AppKit
 import PlanetsCore
 
-/// Answers `planet query …`: plain text for people, JSON for scripts.
 @MainActor
 enum Queries {
     static func run(_ query: Command.Query, json: Bool, controller: AppController) -> String {
@@ -10,10 +9,7 @@ enum Queries {
         switch query {
         case .windows:
             let windows = world.windows.values.sorted { ($0.workspace, $0.id) < ($1.workspace, $1.id) }
-            // Full-screen windows are on Spaces of their own, outside the layout, but each
-            // still belongs to a workspace.
             let fullScreen = wm.fullScreenWindows.sorted { ($0.value.workspace, $0.key) < ($1.value.workspace, $1.key) }
-            // So are minimised windows and the windows of hidden apps.
             let away = wm.awayWindows.sorted { ($0.value.workspace, $0.key) < ($1.value.workspace, $1.key) }
             if json {
                 return encode(windows.map { window in
@@ -124,7 +120,6 @@ enum Queries {
         }.joined(separator: "\n")
     }
 
-    /// The process's own memory, as Activity Monitor counts it.
     static func footprintMB() -> Double {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)

@@ -41,7 +41,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         w.swapWindows(1, 2)
         #expect(placed(w)[2] == .frame(CGRect(x: 0, y: 30, width: 500, height: 570)))
         #expect(placed(w)[1] == .frame(CGRect(x: 500, y: 30, width: 500, height: 570)))
-        // A floating window, or one on another workspace, has no tile to trade.
         let before = w.workspaces["1"]!.tiled
         w.swapWindows(1, 3)
         w.swapWindows(1, 4)
@@ -83,7 +82,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         var w = world()
         w.addWindow(candidate(1)); w.noteFocus(1)
         w.switchWorkspace(.named("2"))
-        // Cmd-Tab to the app whose window lives on workspace 1.
         let r4 = w.noteFocus(1)
         #expect(r4 == .revealedWorkspace("1"))
         #expect(w.focusedWorkspaceName == "1")
@@ -113,7 +111,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
     @Test func directionalFocusAndSwap() {
         var w = world()
         for id: WindowID in [1, 2, 3] { w.addWindow(candidate(id)); w.noteFocus(id) }
-        // Layout: 1 | (2 / 3), focus on 3.
         let r7 = w.focus(.up)
         #expect(r7 == .window(2))
         let r8 = w.focus(.left)
@@ -197,14 +194,12 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         w.setMonitors([left])
         #expect(w.focusedMonitor == 1)
         #expect(placed(w)[1] == .hidden)
-        // Plugging it back in shows the same workspace there again.
         w.setMonitors([left, right])
         #expect(w.visible[2] == "2")
     }
 
     @Test func parkingAvoidsNeighbouringDisplays() {
         let w = world(monitors: [left, right])
-        // Left monitor has a neighbour on its right, so windows park bottom-left.
         let origin = w.parkingOrigin(for: CGSize(width: 400, height: 300), on: 1)
         #expect(origin == CGPoint(x: -399, y: 599))
         let other = w.parkingOrigin(for: CGSize(width: 400, height: 300), on: 2)
@@ -220,12 +215,10 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         #expect(w.windows[2]?.isFloating == true)
         #expect(placed(w)[2] == .hidden)
         #expect(!w.workspaceOrder.contains(World.scratchpad))
-        // Summon it: the window floats over the workspace and holds focus.
         let shown = w.setScratchpad(.toggle)
         #expect(shown == 2)
         #expect(w.focusedWindow == 2)
         guard case .frame? = placed(w)[2] else { Issue.record("scratchpad window should be on screen"); return }
-        // Clicking a window underneath tucks it away again.
         let outcome = w.noteFocus(1)
         #expect(outcome == .hidScratchpad)
         #expect(placed(w)[2] == .hidden)
@@ -250,15 +243,12 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         var w = World(workspaceNames: ["1", "2", "3", "4"], settings: settings)
         w.pinnedMonitors = ["2": "secondary", "4": "Right"]
         w.setMonitors([left, right])
-        // The right display starts on its pinned workspace, not on the next free one.
         #expect(w.visible[2] == "2")
         #expect(w.visible[1] == "1")
-        // Switching to a workspace pinned to the other display shows it there and moves focus.
         w.switchWorkspace(.named("4"))
         #expect(w.visible[2] == "4")
         #expect(w.focusedMonitor == 2)
         #expect(w.visible[1] == "1")
-        // An unpinned workspace opens on the focused display.
         w.switchWorkspace(.named("3"))
         #expect(w.visible[2] == "3")
     }
@@ -296,7 +286,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         var w = world()
         w.addWindow(candidate(1)); w.noteFocus(1)
         w.limitSize(1, to: CGSize(width: 600, height: 400))
-        // The full tile is the whole visible frame: 1000 × 570 at y 30.
         #expect(placed(w)[1] == .frame(CGRect(x: 200, y: 115, width: 600, height: 400)))
         w.limitSize(1, to: nil)
         #expect(placed(w)[1] == .frame(CGRect(x: 0, y: 30, width: 1000, height: 570)))
@@ -327,7 +316,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
     @Test func severalMinimumsShareTheScreenWithoutOverlapping() {
         var w = world()
         for id: WindowID in [1, 2, 3, 4] { w.addWindow(candidate(id)); w.noteFocus(id) }
-        // Dwindle on the 1000 × 570 screen: 1 on the left, then 2 above 3 and 4 side by side.
         w.noteMinimumSize(1, CGSize(width: 450, height: 0))
         w.noteMinimumSize(3, CGSize(width: 0, height: 380))
         w.noteMinimumSize(4, CGSize(width: 300, height: 0))
@@ -341,7 +329,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
             let minimum = w.minSizes[id] ?? .zero
             #expect(frame.width >= minimum.width && frame.height >= minimum.height)
         }
-        // No two overlap, and together they fill the screen: nothing covered, nothing empty.
         let rects = Array(frames.values)
         for i in rects.indices {
             for j in rects.indices where j > i {
@@ -355,11 +342,8 @@ private func placed(_ w: World) -> [WindowID: Placement] {
     @Test func theNewestArrivalFloatsWhenThereIsNoRoom() {
         var w = world()
         for id: WindowID in [1, 2, 3] { w.addWindow(candidate(id)); w.noteFocus(id) }
-        // 1 and 2 each need 600 × 400 of the 1000 × 570 screen: they fit neither side by
-        // side nor stacked, so only one of them can tile.
         w.noteMinimumSize(1, CGSize(width: 600, height: 400))
         w.noteMinimumSize(2, CGSize(width: 600, height: 400))
-        // 3 floats first, then 2; with 2 gone 3 fits beside 1 after all, so only 2 stays out.
         let floated = w.makeRoom(on: "1")
         #expect(floated == [2])
         #expect(w.windows[1]?.isFloating == false)
@@ -403,7 +387,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
     @Test func aWindowTooBigForTheScreenFloatsItself() {
         var w = world()
         for id: WindowID in [1, 2] { w.addWindow(candidate(id)); w.noteFocus(id) }
-        // Wider than the 1000-point screen: floating window 2 couldn't make it fit.
         w.noteMinimumSize(1, CGSize(width: 1200, height: 0))
         #expect(w.makeRoom(on: "1") == [1])
         #expect(w.windows[2]?.isFloating == false)
@@ -424,7 +407,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         let slot = w.slot(of: 1)
         w.removeWindow(1)
         w.noteFocus(2)
-        // A relaunched app's window has a new number.
         w.addWindow(candidate(3), slot: slot)
         #expect(placed(w)[3] == before)
         #expect(w.workspaces["1"]?.tiled == [3, 2])
@@ -437,7 +419,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
         let before = placed(w)[3]
         let saved = try JSONDecoder().decode(TileSlot.self, from: JSONEncoder().encode(w.slot(of: 3)))
         w.removeWindow(3)
-        // Minimised over a restart: the same window, with the same number, returns.
         w.addWindow(candidate(3), workspace: "1", slot: saved)
         #expect(placed(w)[3] == before)
     }
@@ -445,17 +426,14 @@ private func placed(_ w: World) -> [WindowID: Placement] {
     @Test func aSlotWhoseNeighboursChangedFallsBackToANeighbour() {
         var w = world()
         for id: WindowID in [1, 2, 3] { w.addWindow(candidate(id)); w.noteFocus(id) }
-        // 1 on the left, 2 and 3 stacked on the right.
         let slot = w.slot(of: 1)
         w.removeWindow(1)
         w.removeWindow(3)
         w.addWindow(candidate(4), slot: slot)
-        // Its old neighbourhood was 2 and 3; with 3 gone it still lands to the left of 2.
         #expect(w.workspaces["1"]?.tiled == [4, 2])
     }
 
     @Test func restartRebuildsTheArrangementWhateverOrderWindowsReturnIn() throws {
-        // The split between the two pairs belongs to no single window; it must come back too.
         let tree = DwindleNode.split(axis: nil, ratio: 0.35,
                                      first: .split(axis: .vertical, ratio: 0.6, first: .leaf(4), second: .leaf(1)),
                                      second: .split(axis: nil, ratio: 0.7, first: .leaf(2), second: .leaf(3)))
@@ -471,8 +449,6 @@ private func placed(_ w: World) -> [WindowID: Placement] {
     }
 
     @Test func aRestartedAppGetsItsTilesBackUnderNewNumbers() {
-        // Two windows of one app beside one of another; the app restarts and its windows
-        // come back as 11 and 12, in either order.
         for order: [WindowID] in [[11, 12], [12, 11]] {
             var w = world()
             for id: WindowID in [1, 2, 3] { w.addWindow(candidate(id)); w.noteFocus(id) }

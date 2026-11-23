@@ -1,8 +1,5 @@
 name: Pages
 
-# Publishes site/ to GitHub Pages, at https://vibeslop.github.io/Planets/, whenever main
-# changes it. The site is plain files, so nothing is built: the folder is the site.
-
 on:
   push:
     branches:
@@ -17,7 +14,6 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy at a time, and a newer push never waits behind an older one.
 concurrency:
   group: pages
   cancel-in-progress: true

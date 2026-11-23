@@ -1,8 +1,6 @@
 import Foundation
 
-/// A thread running its own run loop. Each app gets one for its Accessibility work:
-/// AX calls block until the other app answers, so a frozen app stalls only its own thread
-/// instead of the whole window manager, and calls to different apps run in parallel.
+// SAFETY: runLoop is written once before ready.signal(); stopped is only mutated on the run loop thread.
 final class RunLoopThread: @unchecked Sendable {
     private final class State: @unchecked Sendable {
         var runLoop: CFRunLoop?
@@ -18,7 +16,6 @@ final class RunLoopThread: @unchecked Sendable {
         let state = self.state
         let thread = Thread {
             state.runLoop = CFRunLoopGetCurrent()
-            // A run loop with no sources returns at once; an idle source keeps it parked.
             var context = CFRunLoopSourceContext()
             let keepAlive = CFRunLoopSourceCreate(nil, 0, &context)
             CFRunLoopAddSource(CFRunLoopGetCurrent(), keepAlive, .defaultMode)
@@ -29,7 +26,6 @@ final class RunLoopThread: @unchecked Sendable {
         }
         thread.name = name
         thread.qualityOfService = qos
-        // AX callbacks and frame batches are shallow; a small stack keeps dozens of these cheap.
         thread.stackSize = 256 * 1024
         thread.start()
         ready.wait()

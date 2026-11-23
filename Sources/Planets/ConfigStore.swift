@@ -1,14 +1,11 @@
 import Foundation
 import PlanetsCore
 
-/// Owns the config file: creates it on first launch, reloads it when it changes on disk,
-/// and writes single settings back without disturbing the rest of the file.
 @MainActor
 final class ConfigStore {
     let url: URL
     private(set) var config: Config
     private(set) var warnings: [String] = []
-    /// The last parse error, shown in the menu until fixed.
     private(set) var error: String?
     var onChange: ((Config) -> Void)?
 
@@ -26,8 +23,6 @@ final class ConfigStore {
         watchFile()
     }
 
-    /// The file's text, or why it can't be read. A file that can't be read is not one holding
-    /// the defaults: a setting saved over it would erase what's there.
     private func read() -> Result<String, ConfigError> {
         do {
             guard let text = String(data: try Data(contentsOf: url), encoding: .utf8) else {
@@ -49,7 +44,6 @@ final class ConfigStore {
         switch read() {
         case .success(let read): text = read
         case .failure(let failure):
-            // Keep running on the last good config, as with a parse error, and say why.
             error = failure.message
             lastContents = nil
             onChange?(config)
@@ -65,13 +59,11 @@ final class ConfigStore {
             config = parsed
             if changed { onChange?(parsed) }
         } catch {
-            // Keep running on the last good config; a half-typed edit shouldn't break tiling.
             self.error = "\(error)"
             onChange?(config)
         }
     }
 
-    /// Changes one setting in place. The file watcher then reloads it like any other edit.
     func set(_ value: TOMLValue, table: String, key: String) {
         guard case .success(let contents) = read() else { return load() }
         let edited = TOMLEditor.setting(value, table: table, key: key, in: contents)
@@ -83,8 +75,6 @@ final class ConfigStore {
         load()
     }
 
-    /// Editors save by writing a new file and renaming it over the old one, which a watch
-    /// on the file itself would miss. Watching the directory catches every kind of save.
     private func watch() {
         let directory = url.deletingLastPathComponent().path
         let fd = open(directory, O_EVTONLY)
@@ -98,9 +88,6 @@ final class ConfigStore {
         self.source = source
     }
 
-    /// Saves that write into the file itself, as `cp`, shell redirection and some editors
-    /// do, change the file but not its folder, so the file is watched too. A save that
-    /// replaces the file leaves this watch on the old one, and the next reload moves it.
     private func watchFile() {
         var info = stat()
         guard stat(url.path, &info) == 0, fileSource == nil || info.st_ino != watchedInode else { return }

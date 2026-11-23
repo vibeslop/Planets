@@ -1,13 +1,10 @@
 import CoreGraphics
 import Foundation
 
-/// Every action Planets can take. Hotkeys, the menu, and the `planet` CLI all speak this
-/// one language, so anything bound to a key can also be scripted.
 public enum Command: Equatable, Sendable {
     public enum WorkspaceTarget: Equatable, Sendable {
         case named(String)
         case next, previous
-        /// The workspace shown before the current one (i3's back_and_forth).
         case back
     }
 
@@ -41,8 +38,6 @@ public enum Command: Equatable, Sendable {
     case focusMonitor(MonitorTarget)
     case moveToMonitor(MonitorTarget)
     case close
-    /// Brings back a minimised or hidden window, onto its workspace: the one named, or else
-    /// the one put away last, on the current workspace first.
     case restore(WindowID?)
     case retile
     case reload
@@ -52,7 +47,6 @@ public enum Command: Equatable, Sendable {
     case moveToScratchpad
     case exec(String)
     case query(Query, json: Bool)
-    /// Opens Planets when you log in, or stops it.
     case loginItem(Toggle)
 }
 
@@ -148,8 +142,6 @@ extension Command {
             guard let axisWord = arg(0), let axis = ResizeAxis(rawValue: axisWord.lowercased()) else {
                 throw CommandParseError("expected width or height")
             }
-            // No screen is 10,000 points across; the bound keeps the amount an Int when
-            // it's shown.
             guard let amountWord = arg(1), let amount = Double(amountWord), abs(amount) <= 10_000 else {
                 throw CommandParseError("expected an amount in points between -10000 and +10000, like +60 or -60")
             }
@@ -179,11 +171,8 @@ extension Command {
         case "move-to-scratchpad":
             return .moveToScratchpad
         case "exec":
-            // Keep the rest of the line verbatim: quoting belongs to the shell that runs it.
             guard let range = line.range(of: "exec") else { throw CommandParseError("expected a command to run") }
             var rest = line[range.upperBound...].trimmingCharacters(in: .whitespaces)
-            // `planet exec "open -a Terminal"` arrives quoted as one word; the shell would look for
-            // a program named the whole phrase.
             if rest.count >= 2, let first = rest.first, first == "\"" || first == "'", rest.last == first,
                !rest.dropFirst().dropLast().contains(first) {
                 rest = String(rest.dropFirst().dropLast())
@@ -202,12 +191,10 @@ extension Command {
         }
     }
 
-    /// Parses shell arguments, as the CLI receives them, quoting any that hold spaces.
     public static func parse(arguments: [String]) throws -> Command {
         try parse(arguments.map { $0.contains(where: \.isWhitespace) ? "\"\($0)\"" : $0 }.joined(separator: " "))
     }
 
-    /// Splits on whitespace, keeping "quoted strings" together.
     static func tokenize(_ line: String) -> [String] {
         var words: [String] = []
         var current = ""

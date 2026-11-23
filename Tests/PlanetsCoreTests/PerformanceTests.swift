@@ -4,9 +4,6 @@ import Testing
 @testable import PlanetsCore
 
 @Suite struct PerformanceTests {
-    /// The model's share of a workspace switch: switching and computing every window's
-    /// spot for 60 windows over nine workspaces. Everything else in a switch is waiting on
-    /// apps, so this number should stay far below a millisecond.
     @Test func switchAndPlaceIsSubMillisecond() {
         let monitor = Monitor(id: 1, name: "Main", frame: CGRect(x: 0, y: 0, width: 2560, height: 1440), visibleFrame: CGRect(x: 0, y: 30, width: 2560, height: 1410), isMain: true)
         var world = World(workspaceNames: (1...9).map(String.init))

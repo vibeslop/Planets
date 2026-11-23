@@ -1,6 +1,4 @@
 import AppKit
-// A full-screen magenta window at the normal level, so any frame where no test
-// window covers the screen shows up as magenta.
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let screen = NSScreen.main!

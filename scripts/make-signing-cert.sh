@@ -1,28 +1,10 @@
 #!/bin/zsh
-# Creates the certificates that sign Planets.app.
-#
-# Usage: scripts/make-signing-cert.sh                a personal certificate for your own builds
-#        scripts/make-signing-cert.sh --release      the release certificate, once per project
-#        scripts/make-signing-cert.sh --import FILE  the release certificate from its backup
-#
-# macOS ties the Accessibility grant to the certificate an app is signed with.
-# A personal certificate keeps your own grant across rebuilds. Releases all carry one release
-# certificate, pinned in scripts/release-certificate.sha1, so users keep their grant across
-# updates; the release workflow signs with it from the secrets of the repository's "release"
-# environment, and --release puts it there.
-#
-# Whoever holds the release key can sign an app that macOS treats as Planets, its grant included,
-# so it stays out of keychains: --release writes a backup encrypted with a password you choose,
-# which goes to the private vibeslop/release-signing repository, encrypted again to the
-# maintainers' SSH keys, and --import is for packaging a release by hand.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 keychain="$HOME/Library/Keychains/login.keychain-db"
 pin_file=scripts/release-certificate.sha1
 environment=release
-# The system LibreSSL writes a PKCS#12 file the keychain can import. Homebrew's OpenSSL 3, often
-# first on PATH, needs -legacy for that, and LibreSSL rejects the flag.
 openssl=/usr/bin/openssl
 
 fail() {
@@ -32,13 +14,11 @@ fail() {
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-# zsh skips the exit trap when a signal ends it, which would leave the unencrypted private key
-# behind; exiting from the signal runs the trap.
+# SAFETY: Exit traps must run on signals so temporary private keys are deleted.
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-# Writes a new key and a self-signed code-signing certificate named $1 to $work.
 make_certificate() {
     cat >"$work/cert.cnf" <<CONF
 [req]
@@ -52,33 +32,24 @@ basicConstraints = critical,CA:false
 keyUsage = critical,digitalSignature
 extendedKeyUsage = critical,codeSigning
 CONF
-    # Twenty years: codesign stops offering an expired certificate, and replacing the release one
-    # would cost every user their grant.
     $openssl req -x509 -newkey rsa:2048 -nodes -days 7300 -config "$work/cert.cnf" \
         -keyout "$work/key.pem" -out "$work/cert.pem" 2>"$work/openssl.log" ||
         fail "openssl could not create the certificate: $(<"$work/openssl.log")"
 }
 
-# Packs the key and certificate in $work into the PKCS#12 file $1, named $2, under the password
-# in PLANETS_P12_PASSWORD.
 export_p12() {
     $openssl pkcs12 -export -inkey "$work/key.pem" -in "$work/cert.pem" -name "$2" \
         -passout env:PLANETS_P12_PASSWORD -out "$1" 2>"$work/openssl.log" ||
         fail "openssl could not write $1: $(<"$work/openssl.log")"
 }
 
-# The SHA-1 hash of the PEM certificate $1, as codesign and security print it.
 fingerprint() {
     $openssl x509 -in "$1" -outform DER | shasum -a 1 | awk '{ print toupper($1) }'
 }
 
-# Read in full before matching: grep -q in a pipe exits at its match, and pipefail would count
-# the writer it cut off as a failure. The second list holds only the identities trusted for code
-# signing, the only ones codesign offers.
 identities=$(security find-identity -p codesigning "$keychain")
 trusted=$(security find-identity -v -p codesigning "$keychain")
 
-# Trusts the certificate in $work/cert.pem for code signing; macOS asks for the login password.
 trust() {
     security add-trusted-cert -p codeSign -k "$keychain" "$work/cert.pem"
 }
@@ -93,7 +64,6 @@ case "${1:-}" in
 pass it over. Delete it in Keychain Access and run this again."
         fi
         make_certificate "Planets Code Signing"
-        # The file only carries the key into the keychain, so a random password does.
         password=$($openssl rand -hex 16)
         export PLANETS_P12_PASSWORD=$password
         export_p12 "$work/personal.p12" "Planets Code Signing"
@@ -112,10 +82,7 @@ vibeslop/release-signing. A new one would make every user grant Accessibility ag
         fi
         backup=$HOME/Planets-Release-Certificate.p12
         [[ ! -e "$backup" ]] || fail "$backup already exists; move it away first."
-        # Everything the certificate needs is checked before it exists, so a failure here leaves
-        # nothing half made.
         command -v gh >/dev/null || fail "The GitHub CLI stores the certificate: brew install gh"
-        # Named, not read from the remote: origin is the Entire mirror, which gh doesn't know.
         repo=${PLANETS_REPO:-vibeslop/Planets}
         gh api "repos/$repo" >/dev/null 2>&1 ||
             fail "gh cannot see $repo; sign in with gh auth login."

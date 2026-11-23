@@ -13,7 +13,6 @@ public struct Modifiers: OptionSet, Hashable, Sendable {
     public static let hyper: Modifiers = [.command, .option, .control, .shift]
     public static let meh: Modifiers = [.option, .control, .shift]
 
-    /// Parses a single modifier word. `mod` is resolved by the caller.
     public static func named(_ word: String) -> Modifiers? {
         switch word.lowercased() {
         case "cmd", "command", "super", "⌘": .command
@@ -26,7 +25,6 @@ public struct Modifiers: OptionSet, Hashable, Sendable {
         }
     }
 
-    /// Symbols in the order macOS menus print them.
     public var symbols: String {
         var out = ""
         if contains(.control) { out += "⌃" }
@@ -37,9 +35,6 @@ public struct Modifiers: OptionSet, Hashable, Sendable {
     }
 }
 
-/// A key plus modifiers. Keys are stored by name ("h", "1", "left", "return") and turned
-/// into key codes by the app using the current keyboard layout, so bindings follow the
-/// letters printed on the keys even on Dvorak or AZERTY.
 public struct KeyChord: Hashable, Sendable, CustomStringConvertible {
     public var key: String
     public var modifiers: Modifiers
@@ -51,7 +46,6 @@ public struct KeyChord: Hashable, Sendable, CustomStringConvertible {
 
     public static func parse(_ text: String, mod: Modifiers) throws -> KeyChord {
         let parts = text.split(separator: "+", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
-        // "mod+shift++" binds the plus key; an empty last part means the key was "+".
         var key = parts.last ?? ""
         var modifierParts = parts.dropLast()
         if key.isEmpty, parts.count >= 2, parts[parts.count - 2].isEmpty {
@@ -134,14 +128,11 @@ public struct KeyBinding: Equatable, Sendable {
     public var command: Command
 }
 
-/// Decides how a matching window is handled. Matches on bundle identifier or app name,
-/// and optionally on a substring of the window title.
 public struct WindowRule: Equatable, Sendable {
     public var app: String?
     public var title: String?
     public var float: Bool?
     public var workspace: String?
-    /// Leaves the window completely alone: never tiled, moved or hidden.
     public var ignore: Bool
 
     public init(app: String? = nil, title: String? = nil, float: Bool? = nil, workspace: String? = nil, ignore: Bool = false) {
@@ -170,29 +161,21 @@ public struct ConfigError: Error, Equatable, CustomStringConvertible, Sendable {
 
 public struct Config: Equatable, Sendable {
     public var workspaces: [String] = (1...9).map(String.init)
-    /// Workspace name to display: "main", "secondary", a position ("2"), or part of a name.
     public var workspaceMonitors: [String: String] = [:]
     public var layout = LayoutSettings()
     public var mod: Modifiers = .option
     public var bindings: [KeyBinding] = []
     public var rules: [WindowRule] = Config.defaultRules
-    /// Apps never managed, by bundle identifier or name.
     public var ignoredApps: [String] = []
-    /// When set, only these apps are managed. Meant for trying Planets out on a few apps.
     public var onlyApps: [String]? = nil
 
     public var focusGlow = true
     public var glowIntensity: Double = 0.7
     public var glowColor: GlowColor = .gold
-    /// Off by default: the strip in the menu bar already says where you are, and a switch
-    /// should change the windows and nothing else.
     public var workspaceHUD = false
     public var dragToSwap = true
-    /// Holding these modifiers lets you drag any window from anywhere inside it. Not plain
-    /// Option: Option-drag is column selection in code editors and terminals.
     public var mouseModifier: Modifiers = [.control, .option]
     public var focusFollowsMouse = false
-    /// Installs new releases by itself. Only a copy installed from a release can.
     public var autoUpdate = true
 
     public init() {
@@ -207,9 +190,6 @@ public struct Config: Equatable, Sendable {
         WindowRule(app: "com.raycast.macos", ignore: true),
     ]
 
-    /// Default keys. Option is the modifier, as in AeroSpace, but the letters macOS uses
-    /// for accent dead keys on the US layout (e, i, u, n and `) are left free, so typing
-    /// é or ñ keeps working.
     public static let defaultBindingTable: [(String, String)] = {
         var table: [(String, String)] = [
             ("mod+h", "focus left"), ("mod+j", "focus down"), ("mod+k", "focus up"), ("mod+l", "focus right"),
@@ -231,18 +211,14 @@ public struct Config: Equatable, Sendable {
             ("mod+comma", "focus-monitor prev"), ("mod+period", "focus-monitor next"),
             ("mod+shift+comma", "move-to-monitor prev"), ("mod+shift+period", "move-to-monitor next"),
             ("mod+shift+q", "close"),
-            ("mod+shift+m", "restore"),  // the window minimised or hidden last, with no Dock to click
+            ("mod+shift+m", "restore"),
             ("mod+shift+c", "reload"),
-            ("mod+b", "menubar"),  // opens the workspace menu
+            ("mod+b", "menubar"),
             ("mod+x", "scratchpad toggle"), ("mod+shift+x", "move-to-scratchpad"),
         ]
         return table
     }()
 
-    /// The arrows do what H J K L do, but only when the modifier is a combination such as
-    /// Control–Option or Hyper. Option, Command or Control alone with an arrow is how
-    /// macOS moves the cursor by word, by line or between Spaces, and a binding would take
-    /// that away in every app.
     public static let arrowBindingTable: [(String, String)] = [
         ("mod+left", "focus left"), ("mod+down", "focus down"), ("mod+up", "focus up"), ("mod+right", "focus right"),
         ("mod+shift+left", "move left"), ("mod+shift+down", "move down"), ("mod+shift+up", "move up"), ("mod+shift+right", "move right"),
@@ -258,7 +234,6 @@ public struct Config: Equatable, Sendable {
     }
 
     public func rule(bundleID: String?, appName: String, title: String) -> WindowRule? {
-        // Later rules win, so a user's rule overrides a built-in one for the same app.
         rules.last { $0.matches(bundleID: bundleID, appName: appName, title: title) }
     }
 
@@ -271,17 +246,12 @@ public struct Config: Equatable, Sendable {
 }
 
 extension Config {
-    /// Why a list of workspace names can't be used, if it can't. The config file and the
-    /// names field in Settings check the same.
     public static func workspaceNamesProblem(_ names: [String]) -> String? {
         if names.isEmpty { return "there has to be at least one name" }
-        // The scratchpad's workspace is hidden; one named so would vanish with it.
         if names.contains(World.scratchpad) { return "“\(World.scratchpad)” is the scratchpad’s own name" }
         return Set(names).count == names.count ? nil : "each name can be used only once"
     }
 
-    /// Reads a config file. Unknown keys are reported as warnings rather than errors so an
-    /// older Planets can still start with a newer file.
     public static func parse(_ text: String) throws -> (config: Config, warnings: [String]) {
         let root = try TOML.parse(text)
         var config = Config()
@@ -359,7 +329,6 @@ extension Config {
             }
         }
 
-        // Keys are resolved after [general] so "mod" means the configured modifier.
         config.bindings = Config.defaultBindings(mod: config.mod)
         if let keys = root["keys"]?.table {
             var byChord: [KeyChord: Int] = [:]
@@ -369,7 +338,6 @@ extension Config {
                 let chord = try KeyChord.parse(chordText, mod: config.mod)
                 guard let commandText = value.string else { throw ConfigError("[keys] \(chordText): expected a command in quotes") }
                 if commandText.isEmpty || commandText == "none" {
-                    // An empty command unbinds a default key.
                     if let index = byChord[chord] { removed.insert(index) }
                     continue
                 }
@@ -407,8 +375,6 @@ extension Config {
         return (config, warnings)
     }
 
-    /// The file written on first launch. Every setting is present and commented so the
-    /// file doubles as documentation.
     public static let defaultFileContents = """
         # Planets configuration
         # Saved changes apply immediately. A mistake keeps the last working version running
@@ -474,12 +440,8 @@ extension Config {
         """
 }
 
-/// The colour of the light around the focused window.
 public enum GlowColor: String, CaseIterable, Sendable {
-    /// The brand's gold.
     case gold
-    /// The accent colour chosen in macOS's settings.
     case accent
-    /// No colour: white light on a dark Mac, graphite on a light one, so it shows on both.
     case neutral
 }

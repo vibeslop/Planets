@@ -1,11 +1,6 @@
 import AppKit
 import PlanetsCore
 
-/// Converts between AppKit's screen model and PlanetsCore's.
-///
-/// AppKit puts the origin at the bottom-left of the primary display with y growing up;
-/// the Accessibility API and PlanetsCore put it at the top-left with y growing down.
-/// Everything crosses between the two here and nowhere else.
 @MainActor
 enum Displays {
     static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }

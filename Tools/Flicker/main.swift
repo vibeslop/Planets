@@ -2,13 +2,6 @@ import AppKit
 import CoreMedia
 import ScreenCaptureKit
 
-// Records the main display frame by frame while workspaces switch, to catch flashes too short
-// to see reliably: frames where the desktop shows through, or parts of two workspaces at once.
-//
-// Usage: flicker <seconds> <outdir> [--frames]
-// Writes frames.txt, one line per frame: the time, then the share of the screen below the
-// menu bar that is magenta backdrop (Tools/Backdrop), Fixture's first, second and third
-// palette colours, and the focus rim's gold. --frames also saves every frame as a PNG.
 let arguments = CommandLine.arguments
 guard arguments.count >= 3, let seconds = Double(arguments[1]) else {
     print("usage: flicker <seconds> <outdir> [--frames]")
@@ -18,6 +11,7 @@ let out = URL(fileURLWithPath: arguments[2])
 let savesFrames = arguments.contains("--frames")
 try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
+// SAFETY: Sample callback runs on a single serial queue; lines are read only after stopCapture().
 final class Sink: NSObject, SCStreamOutput, @unchecked Sendable {
     var lines: [String] = []
     var start: CMTime?
@@ -40,13 +34,13 @@ final class Sink: NSObject, SCStreamOutput, @unchecked Sendable {
                 let p = base + y * row + x * 4
                 let b = Int(p[0]), g = Int(p[1]), r = Int(p[2])
                 total += 1
-                if r > 200 && b > 200 && g < 80 { counts[0] += 1 }                        // backdrop
+                if r > 200 && b > 200 && g < 80 { counts[0] += 1 }
                 else if r > 200 && g > 200 && b > 200 {
-                    if b > g + 4 && g > r + 4 { counts[1] += 1 }                          // window tinted blue
-                    else if b > g + 4 && r > g + 4 { counts[2] += 1 }                     // violet
-                    else if g > b + 2 && g > r + 8 { counts[3] += 1 }                     // green
+                    if b > g + 4 && g > r + 4 { counts[1] += 1 }
+                    else if b > g + 4 && r > g + 4 { counts[2] += 1 }
+                    else if g > b + 2 && g > r + 8 { counts[3] += 1 }
                 }
-                else if r > 190 && g > 120 && g < 215 && b < 140 { counts[4] += 1 }       // gold rim
+                else if r > 190 && g > 120 && g < 215 && b < 140 { counts[4] += 1 }
             }
         }
         CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
@@ -65,7 +59,6 @@ final class Sink: NSObject, SCStreamOutput, @unchecked Sendable {
 let sink = Sink()
 Task {
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-    // A display asleep lists no displays at all.
     guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
         print("no display to record; is it asleep?")
         exit(3)
@@ -83,7 +76,6 @@ Task {
     try await Task.sleep(for: .seconds(seconds))
     try await stream.stopCapture()
     try sink.lines.joined(separator: "\n").write(to: out.appendingPathComponent("frames.txt"), atomically: true, encoding: .utf8)
-    // Workspace 1 holds the first two colours, workspace 2 the third.
     let rows = sink.lines.map { $0.split(separator: " ").compactMap { Double($0) } }
     let desktop = rows.filter { $0[1] > 0.05 }.count
     let mixed = rows.filter { ($0[2] > 0.05 || $0[3] > 0.05) && $0[4] > 0.05 }.count

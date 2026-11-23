@@ -24,7 +24,6 @@ private let screen = CGRect(x: 0, y: 0, width: 1000, height: 600)
         let tree = DwindleNode(windows: [1, 2, 3]).inserting(4, splitting: 1)
         #expect(tree.leaves == [1, 4, 2, 3])
         let frames = tree.frames(in: screen, gap: 0)
-        // Window 1's half is now shared with 4, stacked because the half is taller than wide.
         #expect(frames[1] == CGRect(x: 0, y: 0, width: 500, height: 300))
         #expect(frames[4] == CGRect(x: 0, y: 300, width: 500, height: 300))
     }
@@ -41,17 +40,14 @@ private let screen = CGRect(x: 0, y: 0, width: 1000, height: 600)
         let frames = tree.frames(in: screen, gap: 0)
         #expect(frames[1]?.width == 600)
         #expect(frames[2]?.width == 400)
-        // The second window grows by pulling the same line left.
         let back = tree.resizing(2, along: .horizontal, by: 100, in: screen, gap: 0)
         #expect(back.frames(in: screen, gap: 0)[2]?.width == 500)
     }
 
     @Test func resizeByEdgePicksTheLineOnThatSide() {
-        // 1 | (2 / 3): window 2's left edge is the root line; its bottom edge is the inner line.
         let tree = DwindleNode(windows: [1, 2, 3])
         let wider = tree.resizing(2, along: .horizontal, by: 100, edge: .left, in: screen, gap: 0)
         #expect(wider.frames(in: screen, gap: 0)[2]?.minX == 400)
-        // No line on the right of window 2, so asking for that edge changes nothing.
         #expect(tree.resizing(2, along: .horizontal, by: 100, edge: .right, in: screen, gap: 0) == tree)
     }
 

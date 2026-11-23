@@ -1,16 +1,4 @@
 #!/bin/zsh
-# Builds Planets.app and zips it for GitHub Releases.
-#
-# Usage: scripts/package.sh
-#
-# Output: build/Planets-<version>-macos.zip, to be attached to the v<version> release, where
-# install.sh looks for it.
-#
-# Users keep their Accessibility grant across updates only while every release is signed with
-# the same certificate. scripts/release-certificate.sha1 names it by the SHA-1 hash macOS
-# records for it, and anything signed with another certificate is refused. The release
-# workflow runs this script on a version tag; by hand, it needs the release certificate
-# imported with scripts/make-signing-cert.sh --import.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -21,7 +9,6 @@ if [[ ! -f "$pin_file" ]]; then
   exit 1
 fi
 release=$(<"$pin_file")
-# The release certificate and nothing else: SIGN_IDENTITY would let another one through.
 SIGN_IDENTITY= scripts/build-app.sh
 
 app=build/Planets.app
@@ -29,7 +16,6 @@ codesign --verify --deep --strict "$app"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-# Writes the signing certificate to certificate0; an ad-hoc signature has none.
 codesign -d --extract-certificates="$work/certificate" "$app" 2>/dev/null || true
 fingerprint=
 if [[ -s "$work/certificate0" ]]; then
