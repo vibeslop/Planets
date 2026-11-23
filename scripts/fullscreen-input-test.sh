@@ -1,19 +1,8 @@
 #!/bin/zsh
-# Measures how soon a full-screen window takes input again when you go back to it. A
-# Fixture window stands in for a full-screen app on workspace 4: the only window of its app,
-# raised to the screen saver's level, its main thread busy BUSY ms a frame like a game's or
-# a video player's. Another Fixture holds workspace 1. Each round goes to workspace 1, then
-# back to 4 while F13 is pressed every 30 ms; the full-screen Fixture logs every press it
-# gets and how late. The same trip by Mission Control's ⌃→ alone, with Planets stopped,
-# is the floor: what macOS itself takes.
-#
-# AX_DELAY=30 makes the full-screen Fixture spend that many milliseconds of its main
-# thread on every Accessibility question, as an app slow to answer them does; every
-# question Planets asks it on the way back then holds up its input that long.
-#
-# For the VM: scripts/vm.sh run 'AX_DELAY=30 ./scripts/fullscreen-input-test.sh'
 set -u
 cd "$(dirname "$0")/.."
+source scripts/guard-host.sh
+require_vm
 OUT=${OUT:-/tmp/planets-fullscreen}
 BUSY=${BUSY:-8}
 AX_DELAY=${AX_DELAY:-0}
@@ -48,14 +37,12 @@ for i in $(seq 1 $ROUNDS); do
 done
 screencapture -x "$OUT/arrived.png"
 
-# The window in front must still be found when it leaves full screen, and go back to its tile.
 fs() { $T query windows --json | python3 -c "import json,sys; print(sum(1 for w in json.load(sys.stdin) if w['workspace'] == '4' and w['full-screen'] == $1))"; }
 ./build/fixture-ctl fullscreen $FULL; sleep 3
 [[ $(fs False) == 1 && $(fs True) == 0 ]] && echo "ok   leaving full screen puts it back in its tile" || { echo "FAIL leaving full screen"; $T query windows; }
 ./build/fixture-ctl fullscreen $FULL; sleep 3
 [[ $(fs True) == 1 && $(fs False) == 0 ]] && echo "ok   going full screen again keeps it on workspace 4" || { echo "FAIL going full screen again"; $T query windows; }
 
-# The floor: Planets stopped, the Spaces changed by the shortcut alone.
 pkill -f "build/Planets.app/Contents/MacOS/Planets"; sleep 1.5
 for i in $(seq 1 $ROUNDS); do
   ./build/ticker --for 0 -- ctrl-left >/dev/null; sleep 2.5
@@ -76,7 +63,6 @@ def rounds(path):
             result[name].append(line.split())
     return result
 ticks, got = rounds(f"{out}/ticks.txt"), rounds(f"{out}/fullscreen.log")
-# Late presses are listed as when they were made, from the start of the round, and how late.
 print(f"{'round':<14}{'first press in':>15}{'worst wait':>12}{'late > 50 ms':>14}{'presses got':>13}  late presses (ms in + ms late)")
 for name, lines in ticks.items():
     start = float(lines[0][1]); presses = [float(l[1]) for l in lines[1:]]

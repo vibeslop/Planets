@@ -1,22 +1,13 @@
 #!/bin/zsh
-# Benchmarks ⌘` the way a person feels it: key press to new pixels on screen, measured by
-# build/bench, against a real Chromium app (a throwaway instance of a Chromium browser with
-# its own profile, so your own browsing is never touched): Google Chrome, unless CHROMIUM
-# names another browser's executable. Runs on workspace 9 and only when nobody has
-# used the machine for MIN_IDLE seconds.
-#
-#   NATIVE=1  also measures macOS's own ⌘` with Planets quit, as the baseline.
-#             Planets restarts afterwards and puts every window back.
 set -u
 cd "$(dirname "$0")/.."
-MIN_IDLE=${MIN_IDLE:-90}
+source scripts/guard-host.sh
+require_idle
 TRIALS=${TRIALS:-15}
 T=./build/planet
 APP=/Applications/Planets.app
 PROFILE=/tmp/planets-bench-chromium
 CHROMIUM=${CHROMIUM:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
-idle() { ioreg -c IOHIDSystem | awk '/HIDIdleTime/ {print int($NF/1000000000); exit}'; }
-(( $(idle) >= MIN_IDLE )) || { echo "SKIP: idle only $(idle)s"; exit 2; }
 
 ORIG=$($T query workspaces | awk '$1 ~ /\*$/ {sub(/\*/,"",$1); print $1}')
 cleanup() {

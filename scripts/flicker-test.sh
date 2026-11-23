@@ -1,26 +1,18 @@
 #!/bin/zsh
-# Records workspace switching frame by frame and counts the frames where the desktop shows
-# through or parts of both workspaces show at once. Two Fixture apps over a magenta backdrop:
-# two windows of one on workspace 1, one window of the other on workspace 2, switched ten
-# times fast and four times slowly.
-#
-# For a machine nobody is using (run it through scripts/when-idle.sh): a second Planets
-# manages only Fixture, so your own one is stopped for about half a minute and started again
-# after, which brings your layout back.
 set -u
 cd "$(dirname "$0")/.."
+source scripts/guard-host.sh
+require_idle_or_vm
 OUT=${OUT:-/tmp/planets-flicker}
 rm -rf "$OUT"; mkdir -p "$OUT/support"
 ./build/planet query windows > "$OUT/main-before.txt" 2>/dev/null
 pkill -TERM -x Planets; for i in {1..40}; do pgrep -x Planets >/dev/null || break; sleep 0.25; done
-# The display going to sleep mid-test empties the recording; it stays awake for the test only.
 caffeinate -d -t 120 & AWAKE=$!
 ./build/backdrop & BACKDROP=$!
 finish() {
   [[ -n "${TEST_WM:-}" ]] && kill $TEST_WM 2>/dev/null
   pkill -f "build/Fixture.app/Contents/MacOS/Fixture"; kill $BACKDROP $AWAKE 2>/dev/null
   sleep 1
-  # `open` hands the app this shell's environment, which would point it at the test's config.
   unset PLANETS_SOCKET PLANETS_CONFIG PLANETS_SUPPORT
   open /Applications/Planets.app; sleep 6
   ./build/planet query windows > "$OUT/main-after.txt" 2>/dev/null
